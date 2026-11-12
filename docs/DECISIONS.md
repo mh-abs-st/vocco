@@ -1,0 +1,51 @@
+# Decisions and context
+
+Why Vocco is the way it is, with the reasons, plus what's still open. Read this before changing the coaching
+rules, the stack or the data handling. Add to it when a decision changes.
+
+## Product
+
+- **Separate product** (owner, 2026-11-12): own repo, brand, accounts and data. Offro is a reference for how the listening works, nothing more; copy and adapt, never import.
+- **Name: Vocco** (owner, 2026-11-12). Title: *Vocco — Practice speaking out loud, with a coach that listens*. Domain and trademark not checked yet.
+- **First mode: Coach** (talk on a topic). Debate, Q&A and Drills show as "Soon" on Home.
+- **Accent is coached as clarity**, never as getting rid of an accent.
+
+## Coaching
+
+- **Cues are rules in the browser, not a model call** (2026-11-12): instant, free, testable, and they sit next to the pitch analysis, which has to run in the browser anyway. The server only relays audio and words. Thresholds: `RULES` in `packages/shared/src/engine.js`; change them there and in the tests.
+- **One cue at a time, spaced out** (4–8 s on screen, ≥ 8 s between cues, same cue not within 25 s). More than that is distracting while speaking.
+- **Only the chosen goals cue live** (default: pace + pauses); getting started is always coached. Everything is in the report either way.
+- **Pace ignores long pauses** (gaps over 1 s are taken out of the time): a pause is coached as a pause, not as slow talking.
+- **Pitch is relative to your own voice**: monotone = spread under 2 semitones over 15 s; the mic check (6 s, one line read aloud) records normal loudness and pitch for "Louder" and the pitch line.
+- **"Not clear" words** use Deepgram's word confidence (< 0.55) for now. It's a weak signal (noise also lowers it); real pronunciation scoring is Azure in M3.
+- **Times**: everything uses seconds of audio since the session started (the browser streams every sample, so Deepgram's word times and the browser's pitch frames share one clock).
+
+## Stack
+
+- **Monorepo with npm workspaces**: `packages/shared` (plain JS + JSDoc types, no build step, usable by Node and Vite), `apps/server`, `apps/web`.
+- **Server without a framework** (`node:http` + `ws`), Node ≥ 22: one runtime dependency, and the built-in WebSocket client talks to Deepgram (key sent as the `token` subprotocol). Claude is called over `fetch` (no SDK) so tests fake `fetch`, like Offro's.
+- **Raw mic** (no echo cancellation, noise suppression or auto gain), like Offro: those filters change loudness and pitch, which is what we measure. When the partner speaks out loud (M4), turn echo cancellation on for that mode and recommend headphones.
+- **16 kHz PCM from an AudioWorklet** (not MediaRecorder/WebM like Offro): the pitch analysis needs raw samples anyway, and Azure (M3) needs PCM.
+- **Reports: Sonnet 5.5 with a strict, forced tool** and thinking off (`between_tools`), with fallbacks if the API refuses strict or forced tools (same lesson as Offro: without strict tools, nested results sometimes came back garbled).
+
+## Privacy
+
+- **Nothing is stored on the server.** Audio is relayed to Deepgram and not kept; the transcript and numbers are sent to Claude for the report and not kept. History and settings live in the browser's `localStorage`.
+- **Deepgram `mip_opt_out=true`** on every stream: users' audio isn't used to train Deepgram's models.
+- Write `PRIVACY.md` before launch; update it when accounts, recordings or new vendors (Azure, TTS) arrive.
+
+## Limits until accounts exist
+
+- Per address: 2 open sessions, 20 reports an hour; sessions stop at 10 minutes (`.env`). In memory, fine for one server.
+
+## Known gaps
+
+- Not yet run against real Deepgram and Anthropic keys end to end: the cloud sandbox where v0.1 was written had no npm access. The UI was checked in Chromium with a fake mic (a synthetic voice) and a simulated `/session` server; the server's routes and session relay are covered by tests with fakes.
+- `npm install` hasn't been run: commit the `package-lock.json` it creates.
+- Cue thresholds are first guesses; tune them on real recordings (several voices, a laptop mic and a headset).
+- Pace chart buckets are 10 s, so a 1-minute talk shows 6 points.
+
+## Declined or deferred
+
+- Server-side coaching engine (planned at first): moved to the browser, see above.
+- Accounts, credits, payments: M0b, ported from Offro's patterns.

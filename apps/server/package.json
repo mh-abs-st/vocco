@@ -1,0 +1,19 @@
+{
+  "name": "@vocco/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "dev": "node --env-file-if-exists=.env --watch src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@vocco/shared": "*",
+    "ws": "^8.18.0"
+  }
+}

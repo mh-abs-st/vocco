@@ -1,0 +1,19 @@
+{
+  "name": "@vocco/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Coaching core shared by the web app and the server: cue engine, pitch and loudness, topics, session summary.",
+  "exports": {
+    ".": "./src/index.js",
+    "./pitch": "./src/pitch.js",
+    "./engine": "./src/engine.js",
+    "./topics": "./src/topics.js",
+    "./cues": "./src/cues.js",
+    "./words": "./src/words.js",
+    "./protocol": "./src/protocol.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
