@@ -1,7 +1,8 @@
 # Vocco — Product & Build Plan
 
-React + Node.js web app. Started 2026-11-12. The editable version of this plan lives in the owner's Claude doc
-"Vocco — Product & Build Plan"; this file is the copy that ships with the code. Keep both in step when the plan changes.
+React + Node.js web app. Started 2026-11-12. This is the **living** plan: what's built, what's next. The original product
+plan it came from (the owner's Claude doc "Vocco — Product & Build Plan") is kept as it was in
+[product-plan.md](product-plan.md). Work is tracked in GitHub issues #1–#35, one milestone per row of section 9.
 
 ## 1. The idea
 
@@ -97,6 +98,7 @@ report 2–3 credits, free credits once.
 
 | # | Scope | Status |
 |---|---|---|
+| v0.1 tune | Run with real keys, lockfile + `npm ci`, tune cues, robustness, browsers (#1–#7) | In progress: lockfile, typecheck and build verified in CI |
 | M0 | Monorepo, CI, server, shared core, tests | **Done (v0.1)** |
 | M0b | Supabase auth, accounts, credits, trial, cost tracking (ported patterns) | Next |
 | M1 | Coach mode: mic, Deepgram relay, live start/pace/pause/filler cues, topics, report | **Done (v0.1)** — needs real-mic tuning |

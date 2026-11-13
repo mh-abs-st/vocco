@@ -43,7 +43,8 @@ npm run typecheck  # web app
 packages/shared   coaching engine, pitch & loudness, fillers, topics (plain JS, used by both sides)
 apps/server       Node: /session relay to Deepgram, /api/report via Claude, serves the web app
 apps/web          React + Vite + TypeScript
-docs/             PLAN.md (plan & milestones), DECISIONS.md (why things are the way they are)
+docs/             PLAN.md (living plan & milestones), DECISIONS.md (why things are the way they are),
+                  product-plan.md (the original product plan)
 ```
 
 ## Screens
