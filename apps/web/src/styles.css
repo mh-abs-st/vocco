@@ -162,3 +162,4 @@ main:focus, h1:focus { outline: none; } /* focused by the app on a new screen, n
 .signin { max-width: 520px; }
 .google { display: block; text-align: center; text-decoration: none; }
 .or { text-align: center; color: var(--muted); font-size: 0.86rem; }
+.credits-pill { margin-left: 8px; font-weight: 500; color: var(--ink-2); }

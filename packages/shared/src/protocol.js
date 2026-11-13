@@ -11,7 +11,8 @@
 //   { type: 'ready', maxMinutes }                         speech-to-text is listening
 //   { type: 'words', final, text, words: Word[] }         words heard (interim ones are replaced by the final)
 //   { type: 'utterance_end' }                             a pause long enough to end an utterance
-//   { type: 'limit', reason, message }                    the session stopped (time limit, too many sessions)
+//   { type: 'credits', credits, last, message }           credits are running out (last: this is the last paid minute)
+//   { type: 'limit', reason, message }                    the session stopped (reason: 'time', 'sessions', 'credits')
 //   { type: 'error', message, reason? }                   something failed; the socket closes after it
 //                                                         (reason 'upstream': speech-to-text dropped mid-session)
 //   { type: 'closed', seconds }                           all done; `seconds` of audio were heard

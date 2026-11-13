@@ -6,6 +6,8 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { TOPICS, CATEGORIES } from '@vocco/shared/topics';
 import { checkReportBody, writeReport } from './report.js';
 import { clientIp, originAllowed } from './guard.js';
+import { createCredits } from './credits.js';
+import { publicPricing } from './plans.js';
 
 const MAX_BODY = 200_000;
 const TYPES = {
@@ -47,6 +49,7 @@ async function readJson(req) {
 export function createApp(config, deps) {
   const { guard } = deps;
   const db = deps.db?.enabled ? deps.db : null; // accounts on = sign-in required
+  const credits = db ? createCredits(db) : null;
 
   /** The signed-in user from `Authorization: Bearer <token>`, or null. */
   async function userFrom(req) {
@@ -94,7 +97,7 @@ export function createApp(config, deps) {
       }
       // What the web app needs to know before sign-in: are accounts on, and the public Supabase settings.
       if (url.pathname === '/api/config' && req.method === 'GET') {
-        return json(res, 200, db ? { accounts: true, supabaseUrl: config.supabaseUrl, publishableKey: config.supabasePublishableKey } : { accounts: false }, cors);
+        return json(res, 200, db ? { accounts: true, supabaseUrl: config.supabaseUrl, publishableKey: config.supabasePublishableKey, pricing: publicPricing() } : { accounts: false }, cors);
       }
       if (url.pathname === '/api/me' && req.method === 'GET') {
         if (!db) return json(res, 404, { error: 'Accounts aren’t set up on this server.' }, cors);
@@ -125,9 +128,25 @@ export function createApp(config, deps) {
         const bad = checkReportBody(body);
         if (bad) return json(res, 400, { error: bad }, cors);
         if (!config.anthropicKey) return json(res, 503, { error: 'Reports aren’t set up on this server yet.' }, cors);
+        // Credits: a session's report is paid once; asking again for the same session is free.
+        let ref = null;
+        if (user && credits) {
+          const sessionId = typeof body.sessionId === 'string' && /^[\w-]{1,64}$/.test(body.sessionId) ? body.sessionId : '';
+          if (!sessionId) return json(res, 400, { error: 'Missing session id.' }, cors);
+          ref = credits.reportRef(user, sessionId);
+          if (await credits.reportPaid(ref)) ref = null; // already paid
+          else if ((await credits.balance(user)) < credits.costs.report) {
+            return json(res, 402, { error: `The coach’s notes need ${credits.costs.report} credits. Your numbers are below.`, code: 'credits' }, cors);
+          }
+        }
         try {
           const report = await writeReport(body, { config, fetchImpl: deps.fetchImpl, log });
-          return json(res, 200, { report }, cors);
+          let balance;
+          if (ref) {
+            // Charged only now that it's written. If the balance went too low meanwhile, they still get it.
+            balance = await credits.chargeReport(user, ref).catch((err) => log(`[credits] report charge failed: ${err?.message}`));
+          }
+          return json(res, 200, { report, ...(typeof balance === 'number' ? { credits: balance } : {}) }, cors);
         } catch (err) {
           log(`[report] failed: ${err?.message}${err?.raw ? ` ${String(err.raw).slice(0, 200)}` : ''}`);
           const busy = err?.status === 429 || err?.status === 529;

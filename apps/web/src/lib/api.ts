@@ -1,5 +1,5 @@
 import type { Report, SessionResult } from './types';
-import { accessToken, getAuth, sessionRejected } from './auth';
+import { accessToken, getAuth, sessionRejected, setCredits } from './auth';
 
 const base = (import.meta.env.VITE_API_URL as string | undefined) || '';
 
@@ -26,6 +26,7 @@ export async function requestReport(s: SessionResult): Promise<Report> {
         mode: 'coach',
         topic: { title: s.setup.topic.title, prompt: s.setup.topic.prompt, side: s.setup.side },
         goals: s.setup.goals,
+        sessionId: s.id,
         transcript,
         summary: s.summary,
       }),
@@ -36,5 +37,6 @@ export async function requestReport(s: SessionResult): Promise<Report> {
   const body = await res.json().catch(() => ({}));
   if (res.status === 401) sessionRejected();
   if (!res.ok) throw new Error(body.error || 'The report couldn’t be written. Try again.');
+  if (typeof body.credits === 'number') setCredits(body.credits);
   return body.report;
 }

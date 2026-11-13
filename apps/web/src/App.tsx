@@ -87,7 +87,7 @@ export function App() {
           <nav className="account-nav" aria-label="Account">
             {auth.session ? (
               <button className="btn ghost small" onClick={() => go({ name: 'account' })} title={auth.session.email}>
-                Account
+                Account{auth.credits != null && ' '}{auth.credits != null && <span className="credits-pill">{auth.credits} {auth.credits === 1 ? 'credit' : 'credits'}</span>}
               </button>
             ) : (
               screen.name !== 'signin' && (
@@ -102,11 +102,11 @@ export function App() {
       <main id="main" ref={main} tabIndex={-1}>
         {screen.name === 'home' && <Home go={go} />}
         {screen.name === 'topics' && <TopicPicker go={go} />}
-        {screen.name === 'setup' && <Setup topic={screen.topic} go={go} />}
+        {screen.name === 'setup' && <Setup topic={screen.topic} go={go} auth={auth} />}
         {screen.name === 'session' && <Session setup={screen.setup} go={go} />}
         {screen.name === 'report' && <ReportScreen result={screen.result} go={go} />}
         {screen.name === 'signin' && <SignIn go={go} next={screen.next} error={auth.error} />}
-        {screen.name === 'account' && auth.session && <Account go={go} session={auth.session} />}
+        {screen.name === 'account' && auth.session && <Account go={go} session={auth.session} credits={auth.credits} />}
       </main>
     </div>
   );

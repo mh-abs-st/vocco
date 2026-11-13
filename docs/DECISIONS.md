@@ -78,6 +78,14 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **The server checks every session and report**: the token comes with the socket's `start` message and as `Authorization: Bearer` on `/api/report`; Supabase confirms it (cached for a minute). A rejected token signs the browser out with "Sign in again". Limits count per user as well as per address (1 user can't get round them by switching networks).
 - **Delete account** (Account page, two steps) deletes the Supabase user; their account row and ledger go with it. Past sessions stay in the browser.
 
+## Credits (#10, 2026-11-13)
+
+- **1 credit = 1 started minute of speaking; the coach's notes are 2 credits.** One place: `apps/server/src/plans.js` (also sent to the web app in `/api/config`). Only when Supabase is set up; without it, nothing costs anything.
+- **Live minutes are charged by the server from the audio it receives**, at the start of each minute (a started minute counts), all on one ledger line per session (`session:<id>`). A session needs a minute's credits to start. When the balance can't pay for another minute, the browser gets "This is your last minute"; at the next minute the session stops with a clear message and the report is still written from what was said.
+- **A database hiccup doesn't end a session**: a failed charge is retried every 5 s; after ~30 s of failures the session stops (so an outage can't give away long sessions).
+- **The coach's notes are charged once per session, only after they're written** (`report:<user>:<session id>`; the session id comes from the browser). Not enough credits → 402 before asking Claude, and the report screen still shows the measured numbers. Asking again for the same session is free.
+- **Until free credits arrive (#11), a new account has 0 credits.** To test, grant some in the SQL Editor: `select public.grant_credits('<user uuid>', 20, 'Test credits', 'manual:test-1');`
+
 ## Limits until accounts exist
 
 - Per address: 2 open sessions, 20 reports an hour; sessions stop at 10 minutes (`.env`). In memory, fine for one server.

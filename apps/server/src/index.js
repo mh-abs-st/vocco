@@ -7,11 +7,13 @@ import { createApp } from './app.js';
 import { createGuard, clientIp, originAllowed } from './guard.js';
 import { handleSession } from './session.js';
 import { createSupabase } from './supabase.js';
+import { createCredits } from './credits.js';
 
 const config = loadConfig();
 const guard = createGuard(config);
 const db = createSupabase({ url: config.supabaseUrl, key: config.supabaseKey });
 const server = createServer(createApp(config, { guard, db }));
+const credits = db.enabled ? createCredits(db) : undefined;
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 
 server.on('upgrade', (req, socket, head) => {
@@ -22,7 +24,7 @@ server.on('upgrade', (req, socket, head) => {
   }
   // With accounts on, a session needs a valid sign-in token (sent with 'start').
   const auth = db.enabled ? (token) => db.getUser(token) : undefined;
-  wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, { ip: clientIp(req, config.trustProxy), config, guard, auth }));
+  wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, { ip: clientIp(req, config.trustProxy), config, guard, auth, credits }));
 });
 
 server.listen(config.port, () => {

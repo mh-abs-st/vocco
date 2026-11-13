@@ -8,12 +8,13 @@ import type { SessionSetup, Topic } from '../lib/types';
 import { loadPrefs, savePrefs } from '../lib/history';
 import { Mic, listMics, micError, type VoiceFrame } from '../audio/mic';
 import { supportProblem } from '../lib/support';
+import type { AuthState } from '../lib/auth';
 
 const LENGTHS = [1, 2, 3, 5];
 const PREP = [0, 15, 30];
 const CHECK_LINE = 'The best talks start with a clear point, take a breath, and end on a strong last word.';
 
-export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) {
+export function Setup({ topic, go, auth }: { topic: Topic; go: (s: Screen) => void; auth?: AuthState }) {
   const prefs = loadPrefs();
   const [minutes, setMinutes] = useState(prefs.minutes ?? 2);
   const [prepSeconds, setPrep] = useState(prefs.prepSeconds ?? 15);
@@ -24,6 +25,10 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
   const [deviceId, setDeviceId] = useState(prefs.deviceId ?? '');
   const [baseline, setBaseline] = useState(prefs.baseline);
   const unsupported = supportProblem();
+  // Signed in with credits: how long this session can be, and whether it can start at all.
+  const credits = auth?.accounts && auth.session ? auth.credits : null;
+  const perMin = auth?.pricing?.livePerMinute ?? 1;
+  const outOfCredits = credits != null && credits < perMin;
 
   useEffect(() => {
     listMics().then(setMics).catch(() => {});
@@ -114,8 +119,16 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
       </div>
 
       {unsupported && <p className="note warn" role="alert">{unsupported}</p>}
+      {outOfCredits && (
+        <p className="note warn" role="alert">
+          You’re out of credits. Each minute of speaking uses {perMin} credit{perMin === 1 ? '' : 's'}.
+        </p>
+      )}
+      {credits != null && !outOfCredits && credits < minutes * perMin && (
+        <p className="note">You have {credits} credit{credits === 1 ? '' : 's'}: enough for about {Math.floor(credits / perMin)} minute{Math.floor(credits / perMin) === 1 ? '' : 's'}. The session stops when they run out, and you still get your report.</p>
+      )}
       <div className="row end">
-        <button className="btn primary big" disabled={Boolean(unsupported)} onClick={start}>Start speaking</button>
+        <button className="btn primary big" disabled={Boolean(unsupported) || outOfCredits} onClick={start}>Start speaking</button>
       </div>
     </div>
   );
