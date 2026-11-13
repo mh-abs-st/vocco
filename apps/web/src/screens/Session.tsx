@@ -9,13 +9,14 @@ import { saveSession } from '../lib/history';
 import { clock, newId } from '../lib/format';
 import { VoiceTrace } from '../components/VoiceTrace';
 
-type Phase = 'connecting' | 'prep' | 'live' | 'ending' | 'error';
+type Phase = 'connecting' | 'prep' | 'live' | 'lost' | 'reconnecting' | 'ending' | 'error';
 type Cue = { kind: string; text: string; detail: string } | null;
 
 export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) => void }) {
   const [phase, setPhase] = useState<Phase>('connecting');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [lostMessage, setLostMessage] = useState('');
   const [finals, setFinals] = useState<Word[]>([]);
   const [interim, setInterim] = useState('');
   const [cue, setCue] = useState<Cue>(null);
@@ -27,6 +28,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
   const audioTime = useRef(0);
   const phaseRef = useRef<Phase>('connecting');
   const finishRef = useRef<() => void>(() => {});
+  const reconnectRef = useRef<() => void>(() => {});
   const setP = (p: Phase) => {
     phaseRef.current = p;
     setPhase(p);
@@ -39,8 +41,13 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     let ended = false;
     let goAt = 0;
     let prepStart = 0;
-    let closedResolve: () => void = () => {};
-    const closed = new Promise<void>((r) => (closedResolve = r));
+    // Word times from the server count from the first audio chunk of *that* connection; `offset` is the mic time
+    // of that chunk, so words stay on the mic's clock across reconnects.
+    let offset = 0;
+    let lostAt = 0; // mic time when the connection dropped
+    let lostTotal = 0; // seconds lost to outages (not counted against the session length)
+    let sock: SessionSocket | null = null;
+    let sockClosed: Promise<void> = Promise.resolve();
 
     const coach = createCoach({ goals: setup.goals, baseline: setup.baseline });
 
@@ -50,39 +57,66 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       setP('live');
     };
 
-    const onMessage = (m: ServerMessage) => {
-      if (cancelled) return;
+    function lose(message: string) {
+      if (ended) return;
+      if (phaseRef.current === 'live') lostAt = mic.time;
+      sock?.close();
+      setCue(null);
+      setInterim('');
+      setLostMessage(message);
+      setP('lost');
+    }
+
+    function connect() {
+      let resolveClosed: () => void = () => {};
+      sockClosed = new Promise<void>((r) => (resolveClosed = r));
+      const s: SessionSocket = new SessionSocket((m) => {
+        if (m.type === 'closed') resolveClosed();
+        if (cancelled || s !== sock) return; // an old connection
+        onMessage(m);
+      }, { language: setup.language });
+      sock = s;
+    }
+
+    function onMessage(m: ServerMessage) {
+      const phase = phaseRef.current;
       if (m.type === 'ready') {
-        if (phaseRef.current !== 'connecting') return;
-        if (setup.prepSeconds > 0) {
-          prepStart = Date.now();
-          setP('prep');
-        } else goLive();
+        if (phase === 'connecting') {
+          if (setup.prepSeconds > 0) {
+            prepStart = Date.now();
+            setP('prep');
+          } else goLive();
+        } else if (phase === 'reconnecting') {
+          const now = mic.time;
+          coach.addBreak(lostAt, now);
+          lostTotal += now - lostAt;
+          setLostMessage('');
+          setP('live');
+        }
       } else if (m.type === 'words') {
+        const words = m.words.map((w) => ({ ...w, start: w.start + offset, end: w.end + offset }));
         if (m.final) {
-          coach.addWords(m.words);
+          coach.addWords(words);
           setFinals([...coach.words()]);
           setInterim('');
         } else setInterim(m.text);
       } else if (m.type === 'limit') {
         setNotice(m.message);
-        finish();
+        void finish();
       } else if (m.type === 'error') {
-        if (phaseRef.current === 'live') {
-          setNotice(m.message);
-          finish();
-        } else {
+        if (phase === 'live') lose(m.message || 'Lost the connection. What you said so far is safe.');
+        else if (phase === 'reconnecting') lose('Couldn’t reconnect. Check your connection, then try again.');
+        else if (phase !== 'ending' && phase !== 'lost') {
           setError(m.message);
           setP('error');
           void mic.stop();
         }
       } else if (m.type === 'closed') {
-        closedResolve();
-        if (phaseRef.current === 'live') finish(); // the server ended it
+        if (phase === 'live') lose('Lost the connection. What you said so far is safe.');
+        else if (phase === 'reconnecting') lose('Couldn’t reconnect. Check your connection, then try again.');
       }
-    };
+    }
 
-    const sock = new SessionSocket(onMessage, { language: setup.language });
     const mic = new Mic({
       deviceId: setup.deviceId,
       onFrame: (f) => {
@@ -91,31 +125,46 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
         if (frames.current.length > 1500) frames.current.splice(0, 500);
         audioTime.current = f.t;
       },
-      onPcm: (pcm) => sock.sendAudio(pcm),
+      onPcm: (pcm) => {
+        // Before 'ready' (and while disconnected) audio isn't sent: nobody is listening.
+        sock?.sendAudio(pcm, () => {
+          offset = mic.time - pcm.length / 16000; // the start of this chunk
+        });
+      },
     });
+
+    connect();
     mic.start().catch((e) => {
       if (cancelled) return;
       setError(micError(e));
       setP('error');
-      sock.close();
+      sock?.close();
     });
 
     async function finish() {
       if (ended) return;
       ended = true;
+      const wasConnected = sock?.live;
       setP('ending');
       setCue(null);
       await mic.stop();
-      sock.stop();
-      // The last words arrive just after stopping: wait for the server to close, at most 4 s.
-      await Promise.race([closed, new Promise((r) => setTimeout(r, 4000))]);
-      sock.close();
+      if (wasConnected && sock) {
+        sock.stop();
+        // The last words arrive just after stopping: wait for the server to close, at most 4 s.
+        await Promise.race([sockClosed, new Promise((r) => setTimeout(r, 4000))]);
+      }
+      sock?.close();
       if (cancelled) return;
       const result: SessionResult = { id: newId(), at: Date.now(), setup, words: coach.words(), summary: coach.summary() };
       saveSession(result);
       go({ name: 'report', result });
     }
-    finishRef.current = finish;
+    finishRef.current = () => void finish();
+    reconnectRef.current = () => {
+      if (ended || phaseRef.current !== 'lost') return;
+      setP('reconnecting');
+      connect();
+    };
 
     const timer = setInterval(() => {
       if (cancelled) return;
@@ -127,9 +176,9 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
         const t = mic.time;
         setCue(coach.tick(t));
         setPace(coach.pace(t));
-        const e = t - goAt;
+        const e = t - goAt - lostTotal;
         setElapsed(e);
-        if (e >= total) finish();
+        if (e >= total) void finish();
       }
     }, 250);
 
@@ -137,7 +186,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       cancelled = true;
       clearInterval(timer);
       void mic.stop();
-      sock.close();
+      sock?.close();
     };
     // One session per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,14 +224,18 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
           <h2 className="session-topic">{setup.topic.prompt}</h2>
         </div>
         <div className="row">
-          <span className="timer" aria-label="Time left">{phase === 'live' ? clock(total - elapsed) : clock(total)}</span>
-          <button className="btn danger" disabled={phase === 'ending'} onClick={() => (phase === 'live' ? finishRef.current() : go({ name: 'setup', topic: setup.topic }))}>
-            {phase === 'live' ? 'End' : phase === 'ending' ? 'Ending…' : 'Cancel'}
+          <span className="timer" aria-label="Time left">{phase === 'connecting' || phase === 'prep' ? clock(total) : clock(total - elapsed)}</span>
+          <button
+            className="btn danger"
+            disabled={phase === 'ending'}
+            onClick={() => (phase === 'live' || phase === 'lost' || phase === 'reconnecting' ? finishRef.current() : go({ name: 'setup', topic: setup.topic }))}
+          >
+            {phase === 'ending' ? 'Ending…' : phase === 'connecting' || phase === 'prep' ? 'Cancel' : 'End'}
           </button>
         </div>
       </div>
 
-      <div className={`cue ${cue ? 'on' : ''} ${phase}`} role="status" aria-live="polite">
+      <div className={`cue ${cue ? 'on' : ''} ${phase === 'lost' ? 'lost' : ''}`} role="status" aria-live="polite">
         {phase === 'connecting' && <span className="cue-text">Getting ready…</span>}
         {phase === 'prep' && (
           <>
@@ -197,6 +250,17 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
           </>
         )}
         {phase === 'live' && !cue && <span className="cue-text quiet">{finals.length ? 'Keep going' : 'Go ahead, you’re on'}</span>}
+        {phase === 'lost' && (
+          <>
+            <span className="cue-text">Connection lost</span>
+            <span className="cue-detail">{lostMessage} Keep going when you’re back online, or get your report now.</span>
+            <span className="row wrap cue-actions">
+              <button className="btn primary" onClick={() => reconnectRef.current()}>Keep going</button>
+              <button className="btn" onClick={() => finishRef.current()}>Get my report</button>
+            </span>
+          </>
+        )}
+        {phase === 'reconnecting' && <span className="cue-text quiet">Reconnecting…</span>}
         {phase === 'ending' && <span className="cue-text quiet">Writing your report…</span>}
       </div>
       {notice && <p className="note">{notice}</p>}

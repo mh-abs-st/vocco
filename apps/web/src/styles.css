@@ -122,3 +122,5 @@ input:focus, select:focus, .btn:focus-visible, .chip:focus-visible, .card:focus-
 .timeline { list-style: none; padding: 0; margin: 0; columns: 2; }
 .pace-chart { width: 100%; height: auto; }
 .pace-chart .axis { font-size: 11px; fill: var(--muted); }
+.cue.lost { background: var(--warn-bg); border-color: #f3c9a5; color: var(--warn); }
+.cue-actions { margin-top: 8px; }

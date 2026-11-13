@@ -94,6 +94,8 @@ export function handleSession(client, ctx) {
     };
     upstream.onclose = () => {
       if (state === 'connecting') return fail('Couldn’t start listening. Try again in a moment.');
+      // Closed while we were still sending audio: Deepgram dropped us. Say so, so the browser can reconnect.
+      if (state === 'live') return finish({ type: 'error', reason: 'upstream', message: 'Listening stopped. What you said so far is safe.' });
       finish(null);
     };
     limitTimer = setTimer(() => {

@@ -71,7 +71,7 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
         <Stat label="Fillers" value={`${s.fillers?.count ?? 0}`} unit={`${s.fillers?.perMinute ?? 0} a minute`} hint={s.fillers?.words?.length ? s.fillers.words.map((w) => `“${w}”`).join(', ') : 'None'} />
         <Stat label="Pauses" value={`${s.pauses?.good ?? 0}`} unit="well placed" hint={`${s.pauses?.hesitations ?? 0} hesitations`} />
         <Stat label="Voice range" value={s.voice ? `${s.voice.rangeSemitones}` : '—'} unit="semitones" hint={s.voice ? (s.voice.rangeSemitones < 3 ? 'Quite flat' : 'Lively') : 'Not enough voice heard'} />
-        <Stat label="Talked" value={clock(s.durationSec ?? 0)} unit={`${s.words} words`} hint={`Started after ${s.startDelaySec ?? 0} s`} />
+        <Stat label="Talked" value={clock(s.durationSec ?? 0)} unit={`${s.words} words`} hint={s.connectionLostSec ? `Connection lost for ${Math.round(s.connectionLostSec)} s (not counted)` : `Started after ${s.startDelaySec ?? 0} s`} />
         <Stat label="Sentences" value={`${s.sentences?.avgWords ?? 0}`} unit="words on average" hint={s.sentences?.runOns ? `${s.sentences.runOns} very long` : 'Easy to follow'} />
       </section>
 
