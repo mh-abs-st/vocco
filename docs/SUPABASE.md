@@ -1,0 +1,65 @@
+# Setting up Supabase for Vocco
+
+Vocco keeps accounts and credits in its **own** Supabase project (not Offro's). About 10 minutes. The keys go in your
+local `apps/server/.env` (and later the host's settings), never in chat, issues or commits.
+
+## 1. Create the project
+
+1. https://supabase.com/dashboard → **New project**.
+2. Name: `vocco`. Region: the one closest to your users (e.g. **Central EU (Frankfurt)** for Europe).
+3. Set a strong database password and keep it in your password manager (the app doesn't need it).
+
+## 2. Create the tables
+
+1. In the project: **SQL Editor → New query**.
+2. Paste all of [`db/schema.sql`](../db/schema.sql) and press **Run**. It should finish with "Success. No rows returned".
+3. Safe to run again later (when the schema changes): it only adds and replaces, it never drops data.
+
+What it creates: `accounts` (credit balance), `credit_ledger` (every change), `trial_claims` (free-trial checks, hashes
+only), `api_costs` (what requests cost us, numbers only), the `spend_credits` / `grant_credits` functions, and row level
+security (users can only read their own account and ledger; only the server writes).
+
+## 3. Copy the keys into the server's `.env`
+
+**Project settings → API Keys**:
+
+| `.env` | Where | Notes |
+|---|---|---|
+| `SUPABASE_URL` | Project settings → Data API → Project URL (`https://<ref>.supabase.co`) | |
+| `SUPABASE_SECRET_KEY` | API Keys → **Secret keys** (`sb_secret_…`) | Server only. Full access to the database. |
+| `SUPABASE_PUBLISHABLE_KEY` | API Keys → **Publishable key** (`sb_publishable_…`) | Used by the web app for sign-in (#9). Safe to expose. |
+
+Older projects may only show the legacy keys: put the `service_role` key in `SUPABASE_SERVICE_ROLE_KEY` and the `anon`
+key in `SUPABASE_ANON_KEY` instead (the server accepts either).
+
+## 4. Check it
+
+```bash
+npm run dev:server
+```
+
+The server log should say **`Supabase: connected, schema in place.`** Otherwise it says what's wrong:
+
+- `SUPABASE_URL / SUPABASE_SECRET_KEY are not set` — the `.env` lines are empty.
+- `couldn't connect (Database error 401 …)` — the key is wrong (or it's the publishable key in the secret slot).
+- `missing tables: …` — step 2 wasn't run (or ran in another project).
+
+`http://localhost:8787/health` also shows `"accounts": true`.
+
+## 5. Later
+
+- **Sign-in (#9):** Authentication → URL Configuration (site URL and redirect URLs), and Authentication → Providers →
+  Google. The steps will be added here with #9.
+- **Production:** put the same three variables in the host's environment settings (#28).
+- Nothing in CI needs these keys: CI tests the schema on its own throwaway Postgres (`db/test/run.sh`).
+
+## Manual credit changes
+
+In the SQL Editor (the ref must be unique; it's what stops double grants):
+
+```sql
+select public.grant_credits('<user uuid>', 20, 'Support: goodwill', 'manual:2026-11-13-1');
+select public.spend_credits('<user uuid>', 60, 'Refund', -100000);
+```
+
+Find a user's uuid in **Authentication → Users**.

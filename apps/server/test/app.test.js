@@ -31,7 +31,7 @@ const post = (path, body, headers = {}) => realFetch(base + path, { method: 'POS
 
 test('health says what is set up', async () => {
   const r = await (await realFetch(`${base}/health`)).json();
-  assert.deepEqual(r, { ok: true, listening: false, reports: true });
+  assert.deepEqual(r, { ok: true, listening: false, reports: true, accounts: false });
 });
 
 test('topics are listed', async () => {

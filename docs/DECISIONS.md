@@ -61,6 +61,14 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **Deepgram `mip_opt_out=true`** on every stream: users' audio isn't used to train Deepgram's models.
 - Write `PRIVACY.md` before launch; update it when accounts, recordings or new vendors (Azure, TTS) arrive.
 
+## Accounts and credits (#8, 2026-11-13)
+
+- **Vocco's own Supabase project**, set up by the owner from `docs/SUPABASE.md`; keys only in `.env` / the host, never in chat or the repo.
+- **Schema in `db/schema.sql`**, safe to re-run. Credits change only through `spend_credits` / `grant_credits` (atomic, one ledger line per change; a `ref` makes grants idempotent and merges a session's minutes into one line). Users can only *read* their own account and ledger (row level security); only the server writes. The functions are revoked from `anon` / `authenticated` because Supabase lets them call public functions by default.
+- **Tested on real Postgres**: `db/test/run.sh` applies the schema twice on top of a Supabase stand-in (`db/test/supabase-stub.sql`: `auth.users`, `auth.uid()`, the API roles and default grants) and checks credits and access. CI runs it on every push.
+- **Server client over REST** (`apps/server/src/supabase.js`, no SDK, fake `fetch` in tests). Secret keys (`sb_secret_…`) go on `apikey` only; the legacy `service_role` JWT also as Bearer. Supabase is **optional**: without it the app runs as before (no sign-in); at start-up the server says whether it's connected and whether the tables exist.
+- New users start at 0 credits; free credits come from the server after the trial checks (#11).
+
 ## Limits until accounts exist
 
 - Per address: 2 open sessions, 20 reports an hour; sessions stop at 10 minutes (`.env`). In memory, fine for one server.

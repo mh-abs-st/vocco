@@ -42,7 +42,7 @@ async function readJson(req) {
 
 /**
  * @param {ReturnType<import('./config.js').loadConfig>} config
- * @param {{ guard: ReturnType<import('./guard.js').createGuard>, fetchImpl?: typeof fetch, log?: (l: string) => void, webRoot?: string }} deps
+ * @param {{ guard: ReturnType<import('./guard.js').createGuard>, db?: ReturnType<import('./supabase.js').createSupabase>, fetchImpl?: typeof fetch, log?: (l: string) => void, webRoot?: string }} deps
  */
 export function createApp(config, deps) {
   const { guard } = deps;
@@ -83,7 +83,7 @@ export function createApp(config, deps) {
         return res.end();
       }
       if (url.pathname === '/health') {
-        return json(res, 200, { ok: true, listening: Boolean(config.deepgramKey), reports: Boolean(config.anthropicKey) }, cors);
+        return json(res, 200, { ok: true, listening: Boolean(config.deepgramKey), reports: Boolean(config.anthropicKey), accounts: Boolean(deps.db?.enabled) }, cors);
       }
       if (url.pathname === '/api/topics' && req.method === 'GET') {
         return json(res, 200, { categories: CATEGORIES, topics: TOPICS }, { ...cors, 'cache-control': 'public, max-age=300' });

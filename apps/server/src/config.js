@@ -9,6 +9,12 @@ export function loadConfig(env = process.env) {
     deepgramKey: env.DEEPGRAM_API_KEY || '',
     deepgramModel: env.DEEPGRAM_MODEL || 'nova-3',
     anthropicKey: env.ANTHROPIC_API_KEY || '',
+    // Accounts and credits (#8). Empty = no accounts yet: everything works as before, without sign-in.
+    supabaseUrl: env.SUPABASE_URL || '',
+    // Server key: a secret key (sb_secret_…) or the legacy service_role key. Never sent to the browser.
+    supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
+    // Browser key for sign-in (#9): the publishable key (sb_publishable_…) or the legacy anon key. Safe to expose.
+    supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || '',
     reportModel: env.REPORT_MODEL || 'claude-sonnet-5-5',
     // Browsers on these origins may connect. Empty = any (fine for local work, set it in production).
     allowedOrigins: list(env.ALLOWED_ORIGINS),
