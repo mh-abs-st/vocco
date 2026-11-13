@@ -181,3 +181,29 @@ test('report credits: nothing charged when the report fails', async () => {
     assert.equal(ledger.size, 0);
   });
 });
+
+test('/api/me: the first visit grants free credits once and says so', async () => {
+  let credits = 0, status = null;
+  const ledger = new Set();
+  const db = {
+    enabled: true,
+    getUser: async (t) => (t === 'good' ? { id: 'u7', email: 'new@example.com' } : null),
+    getAccount: async () => ({ user_id: 'u7', credits, trial_status: status }),
+    hasLedgerRef: async (ref) => ledger.has(ref),
+    countTrialClaims: async () => 0,
+    addTrialClaims: async () => null,
+    grantCredits: async (_u, amount, _r, ref) => { if (!ledger.has(ref)) { ledger.add(ref); credits += amount; } return credits; },
+    updateAccount: async (_u, f) => { status = f.trial_status; },
+  };
+  const config = loadConfig({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_s', TRIAL_SECRET: 't' });
+  const srv = createServer(createApp(config, { guard: createGuard(config), db, log: () => {}, webRoot: '' }));
+  await new Promise((r) => srv.listen(0, r));
+  const me = () => realFetch(`http://127.0.0.1:${srv.address().port}/api/me`, { headers: { authorization: 'Bearer good', 'x-vocco-browser': 'browser-000000000001' } }).then((r) => r.json());
+  try {
+    assert.deepEqual(await me(), { email: 'new@example.com', credits: 10, trial: { status: 'granted', justGranted: true } });
+    assert.deepEqual(await me(), { email: 'new@example.com', credits: 10, trial: { status: 'granted' } });
+    assert.equal(ledger.size, 1);
+  } finally {
+    srv.close();
+  }
+});

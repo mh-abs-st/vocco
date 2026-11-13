@@ -7,7 +7,7 @@ import { Session } from './screens/Session';
 import { ReportScreen } from './screens/Report';
 import { SignIn } from './screens/SignIn';
 import { Account } from './screens/Account';
-import { getAuth, init as initAuth, onAuth, type AuthState } from './lib/auth';
+import { dismissWelcome, getAuth, init as initAuth, onAuth, type AuthState } from './lib/auth';
 import { takeNext } from './lib/next';
 
 export type Screen =
@@ -99,6 +99,12 @@ export function App() {
           </nav>
         )}
       </header>
+      {auth.welcome && screen.name !== 'session' && (
+        <div className="welcome row between" role="status">
+          <span>{auth.welcome}</span>
+          <button className="btn ghost small" onClick={dismissWelcome}>OK</button>
+        </div>
+      )}
       <main id="main" ref={main} tabIndex={-1}>
         {screen.name === 'home' && <Home go={go} />}
         {screen.name === 'topics' && <TopicPicker go={go} />}
@@ -106,7 +112,7 @@ export function App() {
         {screen.name === 'session' && <Session setup={screen.setup} go={go} />}
         {screen.name === 'report' && <ReportScreen result={screen.result} go={go} />}
         {screen.name === 'signin' && <SignIn go={go} next={screen.next} error={auth.error} />}
-        {screen.name === 'account' && auth.session && <Account go={go} session={auth.session} credits={auth.credits} />}
+        {screen.name === 'account' && auth.session && <Account go={go} session={auth.session} credits={auth.credits} trialNote={auth.trialNote} />}
       </main>
     </div>
   );

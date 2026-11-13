@@ -3,7 +3,7 @@ import type { Screen } from '../App';
 import { deleteAccount, refreshCredits, signOut, type Session } from '../lib/auth';
 
 /** Who's signed in, credits, sign out, delete account. */
-export function Account({ go, session, credits }: { go: (s: Screen) => void; session: Session; credits: number | null }) {
+export function Account({ go, session, credits, trialNote }: { go: (s: Screen) => void; session: Session; credits: number | null; trialNote?: string }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -36,6 +36,7 @@ export function Account({ go, session, credits }: { go: (s: Screen) => void; ses
           <span className="label">Credits</span>
           <p>{credits == null ? '—' : credits}</p>
           <p className="small muted">1 credit = 1 minute of speaking. The coach’s notes after a session are 2 credits.</p>
+          {trialNote && <p className="small muted">{trialNote}</p>}
         </div>
         <div className="row">
           <button

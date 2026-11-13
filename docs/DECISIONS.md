@@ -84,7 +84,18 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **Live minutes are charged by the server from the audio it receives**, at the start of each minute (a started minute counts), all on one ledger line per session (`session:<id>`). A session needs a minute's credits to start. When the balance can't pay for another minute, the browser gets "This is your last minute"; at the next minute the session stops with a clear message and the report is still written from what was said.
 - **A database hiccup doesn't end a session**: a failed charge is retried every 5 s; after ~30 s of failures the session stops (so an outage can't give away long sessions).
 - **The coach's notes are charged once per session, only after they're written** (`report:<user>:<session id>`; the session id comes from the browser). Not enough credits → 402 before asking Claude, and the report screen still shows the measured numbers. Asking again for the same session is free.
-- **Until free credits arrive (#11), a new account has 0 credits.** To test, grant some in the SQL Editor: `select public.grant_credits('<user uuid>', 20, 'Test credits', 'manual:test-1');`
+- To test with more credits, grant some in the SQL Editor: `select public.grant_credits('<user uuid>', 20, 'Test credits', 'manual:test-1');`
+
+## Free credits (#11, 2026-11-13)
+
+- **10 free credits once per person** (`FREE_CREDITS` in `plans.js`), given on the account's first `/api/me` (`apps/server/src/trial.js`, adapted from Offro), unless one of these already had them:
+  - **this browser**: a random id the web app keeps in localStorage (`lib/browser-id.ts`, sent as `x-vocco-browser`);
+  - **this email**: Gmail dots and `+tags` count as the same inbox; throwaway-inbox domains get none (`TRIAL_BLOCKED_DOMAINS` adds more);
+  - **this network**: up to 3 in 30 days per IPv4 address or IPv6 /64, so a shared office or school still works.
+- **Only keyed hashes are stored** (`trial_claims`), never the raw IP, browser id or email. The key is `TRIAL_SECRET`: set it once in production and never change it, or earlier claims stop matching.
+- The decision is stored on the account (`trial_status`: `granted` / `denied:<reason>`), so it's made once. The grant is idempotent (`welcome:<user>`), so two requests at once can't double it.
+- **The person is told**: a one-time "Welcome! You have 10 free credits" line, or, when they're out of credits, why there were none ("Free credits were already used in this browser").
+- A failed check (database hiccup) gives no answer this time and is tried again on the next visit.
 
 ## Limits until accounts exist
 

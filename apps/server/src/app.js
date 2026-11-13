@@ -8,6 +8,7 @@ import { checkReportBody, writeReport } from './report.js';
 import { clientIp, originAllowed } from './guard.js';
 import { createCredits } from './credits.js';
 import { publicPricing } from './plans.js';
+import { createTrial, trialMessage, trialSecret } from './trial.js';
 
 const MAX_BODY = 200_000;
 const TYPES = {
@@ -57,6 +58,7 @@ export function createApp(config, deps) {
     return m && db ? db.getUser(m[1].trim()) : null;
   }
   const log = deps.log || console.log;
+  const trial = db ? createTrial({ db, secret: trialSecret(config), blockedDomains: config.trialBlockedDomains, log }) : null;
   const webRoot = deps.webRoot ?? (config.webDist ? resolve(process.cwd(), config.webDist) : '');
 
   async function serveStatic(req, res, pathname) {
@@ -89,7 +91,7 @@ export function createApp(config, deps) {
     const cors = origin && originAllowed(origin, config.allowedOrigins) ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {};
     try {
       if (req.method === 'OPTIONS') {
-        res.writeHead(204, { ...cors, 'access-control-allow-methods': 'GET, POST, DELETE', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '600' });
+        res.writeHead(204, { ...cors, 'access-control-allow-methods': 'GET, POST, DELETE', 'access-control-allow-headers': 'content-type, authorization, x-vocco-browser', 'access-control-max-age': '600' });
         return res.end();
       }
       if (url.pathname === '/health') {
@@ -104,7 +106,15 @@ export function createApp(config, deps) {
         const user = await userFrom(req);
         if (!user) return json(res, 401, { error: 'Sign in again.' }, cors);
         const acc = await db.getAccount(user.id, user.email);
-        return json(res, 200, { email: user.email, credits: acc.credits ?? 0 }, cors);
+        // The first time: free credits, once per browser / network / email (#11).
+        let t;
+        try {
+          t = await trial.claim({ user, account: acc, browserId: req.headers['x-vocco-browser'], ip: clientIp(req, config.trustProxy) });
+        } catch (err) {
+          log(`[trial] check failed: ${err?.message}`); // try again on the next visit
+        }
+        const balance = t?.balance ?? acc.credits ?? 0;
+        return json(res, 200, { email: user.email, credits: balance, ...(t ? { trial: { status: t.status, ...(t.justGranted ? { justGranted: true } : {}), ...(t.reason ? { message: trialMessage(t.reason) } : {}) } } : {}) }, cors);
       }
       if (url.pathname === '/api/account' && req.method === 'DELETE') {
         if (!db) return json(res, 404, { error: 'Accounts aren’t set up on this server.' }, cors);

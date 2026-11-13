@@ -73,8 +73,9 @@ device: you come back signed in, and **Account** shows your email and 0 credits 
 
 ## 6. Production
 
-Put the same three variables in the host's environment settings (#28), and add the production address to the
-Redirect URLs.
+Put the same three variables in the host's environment settings (#28), add the production address to the
+Redirect URLs, and set **`TRIAL_SECRET`** to a long random value (`openssl rand -hex 32`) once: it's the key for the
+anonymous free-credit hashes, so never change it afterwards.
 - Nothing in CI needs these keys: CI tests the schema on its own throwaway Postgres (`db/test/run.sh`).
 
 ## Manual credit changes

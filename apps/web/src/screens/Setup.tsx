@@ -122,6 +122,7 @@ export function Setup({ topic, go, auth }: { topic: Topic; go: (s: Screen) => vo
       {outOfCredits && (
         <p className="note warn" role="alert">
           You’re out of credits. Each minute of speaking uses {perMin} credit{perMin === 1 ? '' : 's'}.
+          {auth?.trialNote ? ` ${auth.trialNote}` : ''}
         </p>
       )}
       {credits != null && !outOfCredits && credits < minutes * perMin && (

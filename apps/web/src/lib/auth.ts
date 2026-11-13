@@ -3,16 +3,29 @@
 // `init()` picks up and removes from the address bar. The session is kept in localStorage and refreshed before
 // it runs out. When the server has no accounts (`/api/config` → accounts: false), everything here is off.
 
+import { browserId } from './browser-id';
+
 const base = (import.meta.env.VITE_API_URL as string | undefined) || '';
 const KEY = 'vocco.auth.v1';
 
 export type Pricing = { livePerMinute: number; report: number; freeCredits: number };
 export type AuthConfig = { accounts: false } | { accounts: true; supabaseUrl: string; publishableKey: string; pricing?: Pricing };
 export type Session = { accessToken: string; refreshToken: string; expiresAt: number; email: string; userId: string };
-export type AuthState = { ready: boolean; accounts: boolean; session: Session | null; error: string; credits: number | null; pricing: Pricing | null };
+export type AuthState = {
+  ready: boolean;
+  accounts: boolean;
+  session: Session | null;
+  error: string;
+  credits: number | null;
+  pricing: Pricing | null;
+  /** Free credits just arrived: a one-time welcome line. */
+  welcome: string;
+  /** Why there were no free credits (shown when someone is out of credits). */
+  trialNote: string;
+};
 
 let config: AuthConfig | null = null;
-let state: AuthState = { ready: false, accounts: false, session: null, error: '', credits: null, pricing: null };
+let state: AuthState = { ready: false, accounts: false, session: null, error: '', credits: null, pricing: null, welcome: '', trialNote: '' };
 const listeners = new Set<(s: AuthState) => void>();
 
 function set(next: Partial<AuthState>) {
@@ -96,10 +109,21 @@ export async function init() {
 export async function refreshCredits() {
   const token = await accessToken();
   if (!token) return;
-  const res = await fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+  // The browser id lets the server give free credits once per browser (it keeps only a hash).
+  const res = await fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${token}`, 'x-vocco-browser': browserId() } }).catch(() => null);
   if (res?.status === 401) return sessionRejected();
-  if (res?.ok) set({ credits: Number((await res.json()).credits) || 0 });
+  if (!res?.ok) return;
+  const me = await res.json();
+  const credits = Number(me.credits) || 0;
+  const trial = me.trial as { status?: string; justGranted?: boolean; message?: string } | undefined;
+  set({
+    credits,
+    ...(trial?.justGranted ? { welcome: `Welcome! You have ${credits} free credits to start: 1 credit is 1 minute of speaking.` } : {}),
+    trialNote: trial?.status === 'denied' ? trial.message || '' : '',
+  });
 }
+
+export const dismissWelcome = () => set({ welcome: '' });
 
 /** The server told us the new balance (e.g. after a report). */
 export const setCredits = (credits: number) => set({ credits });
@@ -144,7 +168,7 @@ export async function accessToken(): Promise<string | null> {
 
 function signedOut(error = '') {
   save(null);
-  set({ session: null, error, credits: null });
+  set({ session: null, error, credits: null, welcome: '', trialNote: '' });
 }
 
 /** The server said the token is no good (401): sign out locally. */

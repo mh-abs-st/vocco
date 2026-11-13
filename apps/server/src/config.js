@@ -15,6 +15,10 @@ export function loadConfig(env = process.env) {
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     // Browser key for sign-in (#9): the publishable key (sb_publishable_…) or the legacy anon key. Safe to expose.
     supabasePublishableKey: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || '',
+    // Free credits (#11): the key for the anonymous hashes. Set it once in production and never change it, or
+    // earlier claims stop matching. Unset: derived from the Supabase key (fine for local work).
+    trialSecret: env.TRIAL_SECRET || '',
+    trialBlockedDomains: list(env.TRIAL_BLOCKED_DOMAINS),
     reportModel: env.REPORT_MODEL || 'claude-sonnet-5-5',
     // Browsers on these origins may connect. Empty = any (fine for local work, set it in production).
     allowedOrigins: list(env.ALLOWED_ORIGINS),
