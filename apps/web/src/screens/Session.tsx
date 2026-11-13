@@ -217,6 +217,20 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Screen readers hear a cue once when it appears, and state changes (lost, reconnecting, ending) — not every redraw.
+  const [announce, setAnnounce] = useState('');
+  useEffect(() => {
+    if (needsTap) setAnnounce('Tap Start listening to begin.');
+    else if (phase === 'prep') setAnnounce(`Think about your opening line. You start in ${setup.prepSeconds} seconds.`);
+    else if (phase === 'live' && cue) setAnnounce(`${cue.text}. ${cue.detail}`);
+    else if (phase === 'live' && !finals.length) setAnnounce('You’re on. Start speaking.');
+    else if (phase === 'lost') setAnnounce(`Connection lost. ${lostMessage}`);
+    else if (phase === 'reconnecting') setAnnounce('Reconnecting.');
+    else if (phase === 'ending') setAnnounce('Writing your report.');
+    // Only when the cue kind or phase changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cue?.kind, phase, needsTap]);
+
   const fillers = useMemo(() => fillerIndexes(finals), [finals]);
   const transcriptBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -230,7 +244,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       <div className="stack">
         <div className="card">
           <h1>Couldn’t start</h1>
-          <p className="note warn">{error}</p>
+          <p className="note warn" role="alert">{error}</p>
           <div className="row">
             <button className="btn primary" onClick={() => go({ name: 'setup', topic: setup.topic })}>Back to setup</button>
             <button className="btn" onClick={() => go({ name: 'home' })}>Home</button>
@@ -244,6 +258,8 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
 
   return (
     <div className="session stack">
+      <h1 className="sr-only">Live session</h1>
+      <div className="sr-only" role="status" aria-live="polite">{announce}</div>
       <div className="row between wrap">
         <div>
           <span className="small muted">{setup.side ? `Arguing ${setup.side === 'for' ? 'for' : 'against'}` : 'Your topic'}</span>
@@ -261,7 +277,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
         </div>
       </div>
 
-      <div className={`cue ${cue && !needsTap ? 'on' : ''} ${phase === 'lost' ? 'lost' : ''}`} role="status" aria-live="polite">
+      <div className={`cue ${cue && !needsTap ? 'on' : ''} ${phase === 'lost' ? 'lost' : ''}`}>
         {needsTap && phase !== 'lost' && phase !== 'ending' ? (
           <>
             <span className="cue-text">Tap to start listening</span>
