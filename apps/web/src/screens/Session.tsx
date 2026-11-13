@@ -7,7 +7,7 @@ import { Mic, micError, type VoiceFrame } from '../audio/mic';
 import { SessionSocket, type ServerMessage } from '../lib/session-socket';
 import { saveSession } from '../lib/history';
 import { clock, newId } from '../lib/format';
-import { accessToken, getAuth, sessionRejected } from '../lib/auth';
+import { accessToken, getAuth, refreshCredits, sessionRejected } from '../lib/auth';
 import { VoiceTrace } from '../components/VoiceTrace';
 
 type Phase = 'connecting' | 'prep' | 'live' | 'lost' | 'reconnecting' | 'ending' | 'error';
@@ -111,7 +111,16 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
           setFinals([...coach.words()]);
           setInterim('');
         } else setInterim(m.text);
+      } else if (m.type === 'credits') {
+        setNotice(m.message);
       } else if (m.type === 'limit') {
+        if (phase === 'connecting' || phase === 'prep') {
+          // Stopped before it began (e.g. out of credits): nothing to report.
+          setError(m.message);
+          setP('error');
+          void mic.stop();
+          return;
+        }
         setNotice(m.message);
         void finish();
       } else if (m.type === 'error' && m.reason === 'auth') {
@@ -163,7 +172,8 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
         }
       })
       .catch((e) => {
-        if (cancelled) return;
+        // Already stopped for another reason (out of credits, signed out): keep that message.
+        if (cancelled || phaseRef.current === 'error') return;
         setError(micError(e));
         setP('error');
         sock?.close();
@@ -188,6 +198,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       }
       sock?.close();
       if (cancelled) return;
+      if (getAuth().accounts) void refreshCredits();
       const result: SessionResult = { id: newId(), at: Date.now(), setup, words: coach.words(), summary: coach.summary() };
       saveSession(result);
       go({ name: 'report', result });

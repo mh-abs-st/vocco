@@ -100,7 +100,7 @@ report 2–3 credits, free credits once.
 |---|---|---|
 | v0.1 tune | Run with real keys, lockfile + `npm ci`, tune cues, robustness, browsers (#1–#7) | In progress: lockfile + CI (#1), reconnect (#3), browser support code + phone layout (#4), report polish (#5), accessibility (#6) done; real-key run (#1) and tuning (#2) need the owner |
 | M0 | Monorepo, CI, server, shared core, tests | **Done (v0.1)** |
-| M0b | Supabase auth, accounts, credits, trial, cost tracking (ported patterns) | In progress: schema + server client (#8), sign-in (#9) done; project setup by the owner (docs/SUPABASE.md) |
+| M0b | Supabase auth, accounts, credits, trial, cost tracking (ported patterns) | In progress: schema + server client (#8), sign-in (#9), credits and live metering (#10) done; project setup by the owner (docs/SUPABASE.md) |
 | M1 | Coach mode: mic, Deepgram relay, live start/pace/pause/filler cues, topics, report | **Done (v0.1)** — needs real-mic tuning |
 | M2 | Voice: pitch + loudness, calibration, monotone/uptalk/trailing-off/quiet cues, charts | **Mostly done (v0.1)** — tune thresholds on real voices |
 | M3 | Pronunciation: Azure streaming assessment, word highlighting, words to practise with model audio, read-aloud drills | |

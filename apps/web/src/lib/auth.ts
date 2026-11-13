@@ -6,12 +6,13 @@
 const base = (import.meta.env.VITE_API_URL as string | undefined) || '';
 const KEY = 'vocco.auth.v1';
 
-export type AuthConfig = { accounts: false } | { accounts: true; supabaseUrl: string; publishableKey: string };
+export type Pricing = { livePerMinute: number; report: number; freeCredits: number };
+export type AuthConfig = { accounts: false } | { accounts: true; supabaseUrl: string; publishableKey: string; pricing?: Pricing };
 export type Session = { accessToken: string; refreshToken: string; expiresAt: number; email: string; userId: string };
-export type AuthState = { ready: boolean; accounts: boolean; session: Session | null; error: string };
+export type AuthState = { ready: boolean; accounts: boolean; session: Session | null; error: string; credits: number | null; pricing: Pricing | null };
 
 let config: AuthConfig | null = null;
-let state: AuthState = { ready: false, accounts: false, session: null, error: '' };
+let state: AuthState = { ready: false, accounts: false, session: null, error: '', credits: null, pricing: null };
 const listeners = new Set<(s: AuthState) => void>();
 
 function set(next: Partial<AuthState>) {
@@ -66,6 +67,7 @@ export async function init() {
     config = { accounts: false };
   }
   if (!config?.accounts) return set({ ready: true, accounts: false, session: null });
+  set({ pricing: config.pricing ?? { livePerMinute: 1, report: 2, freeCredits: 0 } });
 
   const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
   if (hash.get('error_description') || hash.get('error')) {
@@ -81,12 +83,26 @@ export async function init() {
     if (who) {
       const s: Session = { accessToken, refreshToken: hash.get('refresh_token')!, expiresAt: Number(hash.get('expires_at')) || Date.now() / 1000 + Number(hash.get('expires_in') || 3600), ...who };
       save(s);
-      return set({ ready: true, accounts: true, session: s, error: '' });
+      set({ ready: true, accounts: true, session: s, error: '' });
+      return void refreshCredits();
     }
     return set({ ready: true, accounts: true, session: null, error: 'Signing in didn’t work. Try again.' });
   }
   set({ ready: true, accounts: true, session: load() });
+  if (state.session) void refreshCredits();
 }
+
+/** Ask the server for the balance (after sign-in, a session, a report). */
+export async function refreshCredits() {
+  const token = await accessToken();
+  if (!token) return;
+  const res = await fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+  if (res?.status === 401) return sessionRejected();
+  if (res?.ok) set({ credits: Number((await res.json()).credits) || 0 });
+}
+
+/** The server told us the new balance (e.g. after a report). */
+export const setCredits = (credits: number) => set({ credits });
 
 /** Where sign-in links and Google send people back to: this page. */
 const returnUrl = () => `${location.origin}/`;
@@ -128,7 +144,7 @@ export async function accessToken(): Promise<string | null> {
 
 function signedOut(error = '') {
   save(null);
-  set({ session: null, error });
+  set({ session: null, error, credits: null });
 }
 
 /** The server said the token is no good (401): sign out locally. */

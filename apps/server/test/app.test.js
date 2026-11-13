@@ -72,6 +72,8 @@ test('with accounts on: config, me, report needs sign-in, delete account', async
     getUser: async (t) => (t === 'good' ? { id: 'u1', email: 'a@example.com' } : null),
     getAccount: async () => ({ user_id: 'u1', credits: 12 }),
     deleteUser: async (id) => deleted.push(id),
+    hasLedgerRef: async () => false,
+    spendCredits: async () => 10,
   };
   const config = loadConfig({ ANTHROPIC_API_KEY: 'k', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_s', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_p' });
   const srv = createServer(createApp(config, { guard: createGuard(config), db, fetchImpl: claude, log: () => {}, webRoot: '' }));
@@ -80,13 +82,13 @@ test('with accounts on: config, me, report needs sign-in, delete account', async
   const auth = { authorization: 'Bearer good' };
   try {
     const cfg = await (await realFetch(`${b}/api/config`)).json();
-    assert.deepEqual(cfg, { accounts: true, supabaseUrl: 'https://x.supabase.co', publishableKey: 'sb_publishable_p' });
+    assert.deepEqual(cfg, { accounts: true, supabaseUrl: 'https://x.supabase.co', publishableKey: 'sb_publishable_p', pricing: { livePerMinute: 1, report: 2, freeCredits: 10 } });
     assert.ok(!JSON.stringify(cfg).includes('sb_secret')); // the secret key never leaves the server
 
     assert.equal((await realFetch(`${b}/api/me`)).status, 401);
     assert.deepEqual(await (await realFetch(`${b}/api/me`, { headers: auth })).json(), { email: 'a@example.com', credits: 12 });
 
-    const body = JSON.stringify({ transcript: 'Hi.', summary: { wpm: 140 } });
+    const body = JSON.stringify({ transcript: 'Hi.', summary: { wpm: 140 }, sessionId: 's1' });
     const noAuth = await realFetch(`${b}/api/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
     assert.equal(noAuth.status, 401);
     assert.match((await noAuth.json()).error, /Sign in/);
@@ -109,4 +111,73 @@ test('without accounts: config says so, and me/account aren’t there', async ()
   const r = await (await realFetch(`${base}/api/config`)).json();
   assert.deepEqual(r, { accounts: false });
   assert.equal((await realFetch(`${base}/api/me`)).status, 404);
+});
+
+// ----- credits (#10) -----
+async function withAccountsApp(dbOverrides, fn) {
+  const ledger = new Map(); // ref → delta
+  let credits = dbOverrides.credits ?? 12;
+  const calls = { claude: 0 };
+  const db = {
+    enabled: true,
+    getUser: async (t) => (t === 'good' ? { id: 'u1', email: 'a@example.com' } : null),
+    getAccount: async () => ({ user_id: 'u1', credits }),
+    hasLedgerRef: async (ref) => ledger.has(ref),
+    spendCredits: async (_u, amount, _r, { floor, ref }) => {
+      if (credits - amount < floor) return null;
+      credits -= amount;
+      ledger.set(ref, (ledger.get(ref) || 0) - amount);
+      return credits;
+    },
+  };
+  const claudeFails = dbOverrides.claudeFails;
+  const fetchImpl = async (...a) => {
+    calls.claude++;
+    if (claudeFails) return new Response('{"error":{"message":"overloaded"}}', { status: 529 });
+    return claude(...a);
+  };
+  const config = loadConfig({ ANTHROPIC_API_KEY: 'k', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_s' });
+  const srv = createServer(createApp(config, { guard: createGuard(config), db, fetchImpl, log: () => {}, webRoot: '' }));
+  await new Promise((r) => srv.listen(0, r));
+  const b = `http://127.0.0.1:${srv.address().port}`;
+  const report = (sessionId) =>
+    realFetch(`${b}/api/report`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer good' }, body: JSON.stringify({ transcript: 'Hi.', summary: {}, sessionId }) });
+  try {
+    await fn({ report, ledger, calls, credits: () => credits });
+  } finally {
+    srv.close();
+  }
+}
+
+test('report credits: charged once per session after it is written; asking again is free', async () => {
+  await withAccountsApp({ credits: 5 }, async ({ report, ledger, credits }) => {
+    const r1 = await report('s1');
+    assert.equal(r1.status, 200);
+    assert.equal((await r1.json()).credits, 3);
+    assert.equal(ledger.get('report:u1:s1'), -2);
+    const r2 = await report('s1'); // the same session again
+    assert.equal(r2.status, 200);
+    assert.equal(credits(), 3);
+    assert.equal((await report('')).status, 400); // a session id is required
+  });
+});
+
+test('report credits: not enough → 402 before asking Claude', async () => {
+  await withAccountsApp({ credits: 1 }, async ({ report, calls, credits }) => {
+    const r = await report('s2');
+    assert.equal(r.status, 402);
+    const j = await r.json();
+    assert.equal(j.code, 'credits');
+    assert.match(j.error, /need 2 credits/);
+    assert.equal(calls.claude, 0);
+    assert.equal(credits(), 1);
+  });
+});
+
+test('report credits: nothing charged when the report fails', async () => {
+  await withAccountsApp({ credits: 5, claudeFails: true }, async ({ report, ledger, credits }) => {
+    assert.equal((await report('s3')).status, 502);
+    assert.equal(credits(), 5);
+    assert.equal(ledger.size, 0);
+  });
 });

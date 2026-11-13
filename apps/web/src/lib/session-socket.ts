@@ -10,6 +10,7 @@ export type ServerMessage =
   | { type: 'ready'; maxMinutes: number }
   | { type: 'words'; final: boolean; text: string; words: Word[] }
   | { type: 'utterance_end' }
+  | { type: 'credits'; credits: number; last: boolean; message: string }
   | { type: 'limit'; reason: string; message: string }
   | { type: 'error'; message: string; reason?: string }
   | { type: 'closed'; seconds: number };

@@ -191,3 +191,82 @@ test('one user can’t open more sessions than allowed, even from other addresse
   a.emit('close');
   assert.equal(guard.openSessions('user:u1'), 0);
 });
+
+// ----- live credits (#10) -----
+function liveSession({ balance, failCharges = 0 }) {
+  const config = loadConfig({ DEEPGRAM_API_KEY: 'dg' });
+  const guard = createGuard(config);
+  const client = new FakeClient();
+  const ups = [];
+  const charges = [];
+  let left = balance, fails = failCharges;
+  const credits = {
+    costs: { livePerMinute: 1, report: 2 },
+    balance: async () => left,
+    chargeMinute: async (_u, sessionId) => {
+      if (fails > 0) { fails--; throw new Error('db down'); }
+      if (left < 1) return null;
+      left -= 1;
+      charges.push(sessionId);
+      return left;
+    },
+  };
+  handleSession(client, { ip: '1.2.3.4', config, guard, log: () => {}, credits, auth: async () => ({ id: 'u1', email: '' }), open: (url) => { const u = new FakeUpstream(url); ups.push(u); return u; }, setTimer: () => ({}), clearTimer: () => {} });
+  return { client, ups, charges, left: () => left };
+}
+const second = () => Buffer.alloc(32000); // 1 s of 16-bit audio at 16 kHz
+
+test('a session needs a minute of credits to start', async () => {
+  const s = liveSession({ balance: 0 });
+  s.client.emit('message', JSON.stringify({ type: 'start', token: 't' }), false);
+  await tick();
+  assert.deepEqual(s.client.types(), ['limit', 'closed']);
+  assert.equal(s.client.sent[0].reason, 'credits');
+  assert.equal(s.ups.length, 0); // Deepgram never opened
+});
+
+test('every started minute of audio is charged, on one session line', async () => {
+  const s = liveSession({ balance: 5 });
+  s.client.emit('message', JSON.stringify({ type: 'start', token: 't' }), false);
+  await tick();
+  s.ups[0].open();
+  s.client.emit('message', second(), true); // minute 1 starts
+  await tick();
+  assert.equal(s.charges.length, 1);
+  for (let i = 0; i < 59; i++) s.client.emit('message', second(), true); // up to 60 s: still minute 1… 
+  await tick();
+  assert.equal(s.charges.length, 2); // …the 60th second starts minute 2
+  assert.equal(new Set(s.charges).size, 1); // the same session id each time
+  assert.equal(s.left(), 3);
+});
+
+test('a warning before the last minute, then the session stops when credits run out', async () => {
+  const s = liveSession({ balance: 2 });
+  s.client.emit('message', JSON.stringify({ type: 'start', token: 't' }), false);
+  await tick();
+  s.ups[0].open();
+  s.client.emit('message', second(), true); // minute 1: balance 1
+  await tick();
+  assert.equal(s.client.types().includes('credits'), false);
+  for (let i = 0; i < 60; i++) s.client.emit('message', second(), true); // minute 2: balance 0 → warning
+  await tick();
+  const warn = s.client.sent.find((m) => m.type === 'credits');
+  assert.ok(warn && warn.last && warn.credits === 0, JSON.stringify(s.client.sent));
+  for (let i = 0; i < 60; i++) s.client.emit('message', second(), true); // minute 3: can't pay
+  await tick();
+  const types = s.client.types();
+  assert.equal(types.at(-2), 'limit');
+  assert.equal(s.client.sent.at(-2).reason, 'credits');
+  assert.equal(types.at(-1), 'closed');
+});
+
+test('a database hiccup doesn’t end the session; it retries', async () => {
+  const s = liveSession({ balance: 5, failCharges: 1 });
+  s.client.emit('message', JSON.stringify({ type: 'start', token: 't' }), false);
+  await tick();
+  s.ups[0].open();
+  s.client.emit('message', second(), true);
+  await tick();
+  assert.equal(s.charges.length, 0);
+  assert.equal(s.client.types().includes('error'), false);
+});

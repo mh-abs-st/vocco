@@ -1,24 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { Screen } from '../App';
-import { accessToken, deleteAccount, sessionRejected, signOut, type Session } from '../lib/auth';
-
-const base = (import.meta.env.VITE_API_URL as string | undefined) || '';
+import { deleteAccount, refreshCredits, signOut, type Session } from '../lib/auth';
 
 /** Who's signed in, credits, sign out, delete account. */
-export function Account({ go, session }: { go: (s: Screen) => void; session: Session }) {
-  const [credits, setCredits] = useState<number | null>(null);
+export function Account({ go, session, credits }: { go: (s: Screen) => void; session: Session; credits: number | null }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    (async () => {
-      const token = await accessToken();
-      if (!token) return;
-      const res = await fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
-      if (res?.status === 401) return sessionRejected();
-      if (res?.ok) setCredits((await res.json()).credits);
-    })();
+    void refreshCredits();
   }, []);
 
   async function remove() {
@@ -44,6 +35,7 @@ export function Account({ go, session }: { go: (s: Screen) => void; session: Ses
         <div>
           <span className="label">Credits</span>
           <p>{credits == null ? '—' : credits}</p>
+          <p className="small muted">1 credit = 1 minute of speaking. The coach’s notes after a session are 2 credits.</p>
         </div>
         <div className="row">
           <button

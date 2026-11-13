@@ -6,6 +6,7 @@
 
 import { CLOSE_STREAM, KEEP_ALIVE, listenUrl, openDeepgram, toClient, usageLine } from './deepgram.js';
 import { LANGUAGES } from '@vocco/shared/protocol';
+import { randomUUID } from 'node:crypto';
 
 const OPEN = 1;
 const MAX_BUFFERED_BYTES = 16000 * 2 * 5; // audio kept while Deepgram connects: 5 s
@@ -15,8 +16,11 @@ const LANG_IDS = new Set(LANGUAGES.map((l) => l.id));
  * @param {any} client
  * @param {{ ip: string, config: ReturnType<import('./config.js').loadConfig>, guard: ReturnType<import('./guard.js').createGuard>,
  *           auth?: (token: string) => Promise<{ id: string, email: string } | null>,
+ *           credits?: ReturnType<import('./credits.js').createCredits>,
  *           open?: (url: string) => any, log?: (line: string) => void, setTimer?: typeof setTimeout, clearTimer?: typeof clearTimeout }} ctx
  *   `auth`: when accounts are on, checks the sign-in token sent with 'start'; no auth = no sign-in needed.
+ *   `credits`: when accounts are on, a session needs a minute's credits to start, and every started minute of
+ *   audio is charged (one ledger line per session). Out of credits: a warning before the last minute, then it stops.
  */
 export function handleSession(client, ctx) {
   const { ip, config, guard } = ctx;
@@ -31,6 +35,11 @@ export function handleSession(client, ctx) {
   let slots = [];
   /** @type {{ id: string, email: string } | null} */
   let user = null;
+  const sessionId = randomUUID();
+  let minutesPaid = 0;
+  let charging = false;
+  let chargeFailedAt = 0;
+  let chargeFailures = 0;
   let pending = [];
   let pendingBytes = 0;
   let bytes = 0;
@@ -60,6 +69,33 @@ export function handleSession(client, ctx) {
     if (config.logUsage && bytes) log(usageLine({ model: config.deepgramModel, language, seconds: seconds() }));
   }
 
+  /** Charge every started minute of audio. Runs on each chunk; does nothing until a new minute starts. */
+  async function payForMinutes() {
+    const needed = Math.floor(seconds() / 60) + 1; // a started minute counts
+    if (needed <= minutesPaid || charging || state === 'done') return;
+    if (chargeFailures && Date.now() - chargeFailedAt < 5000) return; // the database had a problem: retry every 5 s
+    charging = true;
+    try {
+      const balance = await ctx.credits.chargeMinute(user, sessionId);
+      chargeFailures = 0;
+      if (balance === null || balance === undefined) {
+        return finish({ type: 'limit', reason: 'credits', message: 'You’re out of credits, so the session stopped. Your report is ready.' });
+      }
+      minutesPaid++;
+      if (balance < ctx.credits.costs.livePerMinute) {
+        send({ type: 'credits', credits: balance, last: true, message: 'This is your last minute: you’re out of credits after it.' });
+      }
+    } catch (err) {
+      chargeFailures++;
+      chargeFailedAt = Date.now();
+      log(`[credits] charge failed for ${user.id}: ${err?.message}`);
+      // Don't give away long sessions when the database is down: stop after ~30 s of failures.
+      if (chargeFailures >= 6) fail('Couldn’t check your credits, so the session stopped. Your report is ready.');
+    } finally {
+      charging = false;
+    }
+  }
+
   function fail(message) {
     finish({ type: 'error', message });
   }
@@ -75,6 +111,19 @@ export function handleSession(client, ctx) {
       }
       if (state !== 'checking') return; // the browser left meanwhile
       if (!user) return finish({ type: 'error', reason: 'auth', message: 'Sign in again to start a session.' });
+    }
+    if (user && ctx.credits) {
+      let balance = 0;
+      try {
+        balance = await ctx.credits.balance(user);
+      } catch {
+        if (state !== 'checking') return;
+        return fail('Couldn’t check your credits. Try again in a moment.');
+      }
+      if (state !== 'checking') return;
+      if (balance < ctx.credits.costs.livePerMinute) {
+        return finish({ type: 'limit', reason: 'credits', message: 'You’re out of credits. Add credits to start a session.' });
+      }
     }
     const keys = user ? [ip, `user:${user.id}`] : [ip];
     for (const k of keys) {
@@ -130,6 +179,7 @@ export function handleSession(client, ctx) {
       if (state === 'waiting') return; // audio before "start" is ignored
       const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
       bytes += chunk.length;
+      if (user && ctx.credits) void payForMinutes();
       if (state === 'live') {
         try { upstream.send(chunk); } catch {}
       } else if (pendingBytes + chunk.length <= MAX_BUFFERED_BYTES) {
@@ -155,5 +205,5 @@ export function handleSession(client, ctx) {
   client.on('close', () => finish(null));
   client.on('error', () => finish(null));
 
-  return { state: () => state, seconds, user: () => user };
+  return { state: () => state, seconds, user: () => user, minutesPaid: () => minutesPaid, sessionId };
 }
