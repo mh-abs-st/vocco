@@ -18,7 +18,8 @@ credits, payments): copy and adapt, never import from it or share its accounts/d
   - `src/screens/`: `Home`, `TopicPicker`, `Setup` (+ mic check), `Session` (live), `Report`.
   - `src/audio/mic.ts` + `public/capture-worklet.js`: mic → 16 kHz → pitch/loudness frames + PCM.
   - `src/lib/`: `session-socket.ts`, `api.ts`, `history.ts` (localStorage), `types.ts`, `format.ts`.
-- `docs/`: `PLAN.md`, `DECISIONS.md`.
+- `docs/`: `PLAN.md` (living plan, milestones), `DECISIONS.md`, `product-plan.md` (the original product plan, kept as it was), `screenshots/`.
+- Work is tracked in GitHub issues, grouped by milestone; decisions for the owner have the `decision` label.
 
 ## Run
 - `npm install` at the root (workspaces link `@vocco/shared`).
