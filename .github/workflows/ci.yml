@@ -18,3 +18,8 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      # Temporary (issue #1): hand the generated lockfile back so it can be committed.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
