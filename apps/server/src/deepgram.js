@@ -5,7 +5,6 @@
 import { fromDeepgram } from '@vocco/shared/words';
 
 export const DEEPGRAM_URL = 'wss://api.deepgram.com/v1/listen';
-export const DEEPGRAM_USD_PER_MIN = 0.0077; // Nova-3 streaming, pay-as-you-go list price (check deepgram.com/pricing)
 
 /** Query string for a coaching stream: raw 16-bit PCM from the browser, word timings, fillers kept. */
 export function listenParams({ model = 'nova-3', language = 'en', sampleRate = 16000 } = {}) {
@@ -53,9 +52,3 @@ export function toClient(msg) {
 
 export const CLOSE_STREAM = JSON.stringify({ type: 'CloseStream' });
 export const KEEP_ALIVE = JSON.stringify({ type: 'KeepAlive' });
-
-/** One log line per stream, to compare with Deepgram's dashboard. */
-export function usageLine({ model, language, seconds, requestId }) {
-  const s = Math.max(0, Number(seconds) || 0);
-  return `[usage] deepgram ${model} ${language} seconds=${s.toFixed(1)} ~$${((s / 60) * DEEPGRAM_USD_PER_MIN).toFixed(4)}${requestId ? ` request=${requestId}` : ''}`;
-}

@@ -30,5 +30,7 @@ export function loadConfig(env = process.env) {
     // Serve the built web app from here (one deploy for both). Empty = API only.
     webDist: env.WEB_DIST ?? '../web/dist',
     logUsage: env.LOG_USAGE === '1',
+    // /admin/usage (local only): the password. Unset = the admin pages don't exist.
+    adminToken: env.ADMIN_TOKEN || '',
   };
 }

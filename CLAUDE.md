@@ -13,7 +13,7 @@ credits, payments): copy and adapt, never import from it or share its accounts/d
   - `engine.js`: the live coach (`createCoach`: words + pitch/loudness frames → one cue at a time; `summarize` → report numbers). Thresholds in `RULES`.
   - `cues.js` (cue copy, goals), `pitch.js` (YIN pitch, loudness, PCM), `words.js` (Deepgram words, fillers, sentences), `topics.js` (topic library), `protocol.js` (the `/session` messages).
 - `apps/server/` — Node ≥ 22, `node:http` + `ws`, ESM.
-  - `supabase.js` (accounts, credits, trial claims, cost rows over REST; optional: off without `SUPABASE_URL`), `plans.js` (prices and credit costs, one place), `credits.js` (check and charge: live minutes, reports), `trial.js` (free credits once per browser / email / network, keyed hashes only),
+  - `supabase.js` (accounts, credits, trial claims, cost rows over REST; optional: off without `SUPABASE_URL`), `plans.js` (prices and credit costs, one place), `credits.js` (check and charge: live minutes, reports), `trial.js` (free credits once per browser / email / network, keyed hashes only), `costs.js` (prices, cost rows in batches, the usage summary), `admin.js` (`/admin/usage`: local only + `ADMIN_TOKEN`),
   - `index.js` (start-up, `/session` WebSocket), `app.js` (routes: `/health`, `/api/config`, `/api/me`, `/api/account` (DELETE), `/api/topics`, `/api/report`, the built web app), `session.js` (browser audio → Deepgram, words back), `deepgram.js`, `report.js` (Claude report: prompt, strict tool, clean-up), `anthropic.js` (fetch client, thinking defaults, `callTool`), `guard.js` (limits per address, origin check), `config.js` (env).
 - `apps/web/` — React 19 + Vite + TypeScript.
   - `src/screens/`: `Home`, `TopicPicker`, `Setup` (+ mic check), `Session` (live), `Report`, `SignIn` (email link, Google), `Account` (sign out, delete).
@@ -41,4 +41,5 @@ credits, payments): copy and adapt, never import from it or share its accounts/d
 - Coaching cues: one at a time, few words, an action ("Slow down", "Pause"), never a judgement.
 - Accessibility: text colours at least 4.5:1 (see DECISIONS.md → Accessibility), real buttons with visible focus, `aria-pressed` on choice chips, announce live changes through the hidden status line in `Session.tsx` (not by making busy elements live regions).
 - Credits (when Supabase is set up): live minutes are charged in `session.js` (`payForMinutes`), reports in `app.js` after they're written; every change goes through `spend_credits` / `grant_credits` with a `ref`. New paid features: a cost in `plans.js`, charge only on success.
+- Costs: a new vendor or model call records a row through the cost recorder (`costs.record`), with its price in `costs.js`.
 - Never commit `.env` or keys.

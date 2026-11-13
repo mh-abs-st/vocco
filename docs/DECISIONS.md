@@ -97,6 +97,13 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **The person is told**: a one-time "Welcome! You have 10 free credits" line, or, when they're out of credits, why there were none ("Free credits were already used in this browser").
 - A failed check (database hiccup) gives no answer this time and is tried again on the next visit.
 
+## Cost tracking (#12, 2026-11-13)
+
+- **Every speech-to-text stream and every Claude call is recorded in `api_costs`** with its dollar cost (`apps/server/src/costs.js`): sessions when they end (seconds of audio), reports per attempt (tokens; a retried attempt costs too). Numbers only, never a transcript or report. Rows are written in batches every few seconds and on shutdown; a failed write is logged and dropped, never slowing a session.
+- **Prices live in `costs.js`** (`MODEL_PRICES` per million tokens, `STT_PRICES` per minute), adapted from Offro. Check them against the vendors' pricing pages when they change; an unknown Claude model is priced like Sonnet.
+- **`/admin/usage`**: profit, revenue (what purchases actually cost the buyer, `credit_ledger.amount_cents`), cost, sessions and minutes, reports and cost per report, cost per audio minute, credits used/bought/free; by day, by model, top 20 people by cost. **Only on your own computer** (loopback, no proxy headers) **and only with `ADMIN_TOKEN`** (browser password prompt; any user name). Unset token = the page doesn't exist; the live server always answers 404. For live numbers, run the server locally against the production Supabase project.
+- `LOG_USAGE=1` still prints one line per stream/report (handy without Supabase).
+
 ## Limits until accounts exist
 
 - Per address: 2 open sessions, 20 reports an hour; sessions stop at 10 minutes (`.env`). In memory, fine for one server.

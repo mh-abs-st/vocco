@@ -102,6 +102,26 @@ export function createSupabase({ url = '', key = '', fetchImpl = globalThis.fetc
       for (const [token, hit] of userCache) if (hit.user.id === userId) userCache.delete(token);
     },
 
+    /** All rows of a table created in [fromIso, toIso), read in pages (Supabase returns at most 1000 at a time). */
+    async listBetween(table, select, fromIso, toIso, pageSize = 1000) {
+      const out = [];
+      for (let offset = 0; ; offset += pageSize) {
+        const rows = (await rest(`${table}?select=${select}&created_at=gte.${enc(fromIso)}&created_at=lt.${enc(toIso)}&order=created_at.asc&limit=${pageSize}&offset=${offset}`)) || [];
+        out.push(...rows);
+        if (rows.length < pageSize || out.length >= 200_000) return out;
+      }
+    },
+    /** Emails for these users (the admin page's top users). */
+    async emailsFor(ids) {
+      const list = [...new Set(ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+      const map = {};
+      for (let i = 0; i < list.length; i += 100) {
+        const rows = (await rest(`accounts?select=user_id,email&user_id=in.(${list.slice(i, i + 100).join(',')})`)) || [];
+        for (const r of rows) map[r.user_id] = r.email || '';
+      }
+      return map;
+    },
+
     // Cost rows (#12): numbers only.
     insertApiCosts: (rows) => (rows.length ? rest('api_costs', { method: 'POST', body: rows }) : null),
 

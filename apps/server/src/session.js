@@ -4,7 +4,8 @@
 // `client` is a `ws` WebSocket (on('message'|'close'), send, close). The upstream is a browser-style WebSocket
 // (onopen/onmessage/onclose, send, close), Node's built-in one in production, a fake in tests.
 
-import { CLOSE_STREAM, KEEP_ALIVE, listenUrl, openDeepgram, toClient, usageLine } from './deepgram.js';
+import { CLOSE_STREAM, KEEP_ALIVE, listenUrl, openDeepgram, toClient } from './deepgram.js';
+import { sttCost } from './costs.js';
 import { LANGUAGES } from '@vocco/shared/protocol';
 import { randomUUID } from 'node:crypto';
 
@@ -17,6 +18,7 @@ const LANG_IDS = new Set(LANGUAGES.map((l) => l.id));
  * @param {{ ip: string, config: ReturnType<import('./config.js').loadConfig>, guard: ReturnType<import('./guard.js').createGuard>,
  *           auth?: (token: string) => Promise<{ id: string, email: string } | null>,
  *           credits?: ReturnType<import('./credits.js').createCredits>,
+ *           costs?: ReturnType<import('./costs.js').createCostRecorder>,
  *           open?: (url: string) => any, log?: (line: string) => void, setTimer?: typeof setTimeout, clearTimer?: typeof clearTimeout }} ctx
  *   `auth`: when accounts are on, checks the sign-in token sent with 'start'; no auth = no sign-in needed.
  *   `credits`: when accounts are on, a session needs a minute's credits to start, and every started minute of
@@ -66,7 +68,9 @@ export function handleSession(client, ctx) {
     send({ type: 'closed', seconds: seconds() });
     try { upstream?.close(); } catch {}
     try { client.close(1000); } catch {}
-    if (config.logUsage && bytes) log(usageLine({ model: config.deepgramModel, language, seconds: seconds() }));
+    if (bytes && upstream) {
+      ctx.costs?.record({ user_id: user?.id ?? null, activity: 'session', provider: 'deepgram', model: config.deepgramModel, audio_seconds: seconds(), cost_usd: sttCost(config.deepgramModel, seconds()) });
+    }
   }
 
   /** Charge every started minute of audio. Runs on each chunk; does nothing until a new minute starts. */

@@ -2,6 +2,7 @@
 // scores, what worked, what to fix, a stronger version of the weakest part, and drills.
 
 import { callTool } from './anthropic.js';
+import { claudeCost } from './costs.js';
 
 const S = { type: 'integer', minimum: 1, maximum: 5 };
 export const REPORT_TOOL = {
@@ -103,13 +104,17 @@ export function checkReportBody(b) {
   return null;
 }
 
-export async function writeReport(body, { config, fetchImpl, log = console.log }) {
+export async function writeReport(body, { config, fetchImpl, costs, userId = null }) {
   const input = await callTool(
     { model: config.reportModel, system: SYSTEM, content: reportContent(body), tool: REPORT_TOOL, maxTokens: 3000 },
     {
       key: config.anthropicKey,
       fetchImpl,
-      onUsage: (u) => config.logUsage && log(`[usage] ${config.reportModel} report in=${u.input_tokens} out=${u.output_tokens}`),
+      // Every attempt costs, also ones that are retried: record each.
+      onUsage: (u) => {
+        const c = claudeCost(config.reportModel, u);
+        costs?.record({ user_id: userId, activity: 'report', provider: 'anthropic', model: config.reportModel, input_tokens: c.input, output_tokens: c.output, cost_usd: c.usd });
+      },
     },
   );
   return cleanReport(input);

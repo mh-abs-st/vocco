@@ -8,11 +8,13 @@ import { createGuard, clientIp, originAllowed } from './guard.js';
 import { handleSession } from './session.js';
 import { createSupabase } from './supabase.js';
 import { createCredits } from './credits.js';
+import { createCostRecorder } from './costs.js';
 
 const config = loadConfig();
 const guard = createGuard(config);
 const db = createSupabase({ url: config.supabaseUrl, key: config.supabaseKey });
-const server = createServer(createApp(config, { guard, db }));
+const costs = createCostRecorder({ db, logUsage: config.logUsage });
+const server = createServer(createApp(config, { guard, db, costs }));
 const credits = db.enabled ? createCredits(db) : undefined;
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 
@@ -24,7 +26,7 @@ server.on('upgrade', (req, socket, head) => {
   }
   // With accounts on, a session needs a valid sign-in token (sent with 'start').
   const auth = db.enabled ? (token) => db.getUser(token) : undefined;
-  wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, { ip: clientIp(req, config.trustProxy), config, guard, auth, credits }));
+  wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, { ip: clientIp(req, config.trustProxy), config, guard, auth, credits, costs }));
 });
 
 server.listen(config.port, () => {
@@ -45,6 +47,7 @@ server.listen(config.port, () => {
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     for (const c of wss.clients) c.close(1001, 'Server restarting');
+    void costs.flush(); // keep the last cost rows
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   });

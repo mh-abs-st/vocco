@@ -9,6 +9,7 @@ import { clientIp, originAllowed } from './guard.js';
 import { createCredits } from './credits.js';
 import { publicPricing } from './plans.js';
 import { createTrial, trialMessage, trialSecret } from './trial.js';
+import { handleAdmin } from './admin.js';
 
 const MAX_BODY = 200_000;
 const TYPES = {
@@ -45,7 +46,8 @@ async function readJson(req) {
 
 /**
  * @param {ReturnType<import('./config.js').loadConfig>} config
- * @param {{ guard: ReturnType<import('./guard.js').createGuard>, db?: ReturnType<import('./supabase.js').createSupabase>, fetchImpl?: typeof fetch, log?: (l: string) => void, webRoot?: string }} deps
+ * @param {{ guard: ReturnType<import('./guard.js').createGuard>, db?: ReturnType<import('./supabase.js').createSupabase>,
+ *           costs?: ReturnType<import('./costs.js').createCostRecorder>, fetchImpl?: typeof fetch, log?: (l: string) => void, webRoot?: string }} deps
  */
 export function createApp(config, deps) {
   const { guard } = deps;
@@ -150,7 +152,7 @@ export function createApp(config, deps) {
           }
         }
         try {
-          const report = await writeReport(body, { config, fetchImpl: deps.fetchImpl, log });
+          const report = await writeReport(body, { config, fetchImpl: deps.fetchImpl, costs: deps.costs, userId: user?.id ?? null });
           let balance;
           if (ref) {
             // Charged only now that it's written. If the balance went too low meanwhile, they still get it.
@@ -163,6 +165,7 @@ export function createApp(config, deps) {
           return json(res, 502, { error: busy ? 'The coach is busy right now. Try again in a minute.' : 'The report couldn’t be written. Try again.' }, cors);
         }
       }
+      if (await handleAdmin(req, res, url, { config, db })) return;
       if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'Not found.' }, cors);
       if ((req.method === 'GET' || req.method === 'HEAD') && (await serveStatic(req, res, url.pathname))) return;
       return json(res, 404, { error: 'Not found.' });

@@ -113,3 +113,19 @@ test('deleteUser calls the Auth admin API with the server key and forgets cached
   await db.getUser('tok');
   assert.equal(f.calls.length, 3); // asked Supabase again: the cache entry was dropped
 });
+
+test('listBetween reads every page; emailsFor asks in groups', async () => {
+  const f = fakeFetch((c) => {
+    const offset = Number(new URL(c.url).searchParams.get('offset'));
+    if (c.url.includes('accounts?')) return [200, [{ user_id: '11111111-1111-1111-1111-111111111111', email: 'a@example.com' }]];
+    return [200, offset === 0 ? [{ id: 1 }, { id: 2 }] : offset === 2 ? [{ id: 3 }] : []];
+  });
+  const db = createSupabase({ url: URL_, key: 'sb_secret_k', fetchImpl: f });
+  const rows = await db.listBetween('api_costs', 'id', '2026-11-01T00:00:00Z', '2026-11-14T00:00:00Z', 2);
+  assert.deepEqual(rows.map((r) => r.id), [1, 2, 3]);
+  assert.equal(f.calls.length, 2);
+  assert.match(f.calls[0].url, /created_at=gte\.2026-11-01T00%3A00%3A00Z&created_at=lt\.2026-11-14/);
+  const emails = await db.emailsFor(['11111111-1111-1111-1111-111111111111', 'not-a-uuid']);
+  assert.deepEqual(emails, { '11111111-1111-1111-1111-111111111111': 'a@example.com' });
+  assert.match(f.calls[2].url, /user_id=in\.\(11111111-1111-1111-1111-111111111111\)/);
+});

@@ -270,3 +270,16 @@ test('a database hiccup doesn’t end the session; it retries', async () => {
   assert.equal(s.charges.length, 0);
   assert.equal(s.client.types().includes('error'), false);
 });
+
+test('a session records its speech-to-text seconds and cost when it ends (#12)', async () => {
+  const rows = [];
+  const config = loadConfig({ DEEPGRAM_API_KEY: 'dg' });
+  const client = new FakeClient();
+  const ups = [];
+  handleSession(client, { ip: '1.2.3.4', config, guard: createGuard(config), log: () => {}, costs: { record: (r) => rows.push(r) }, open: (url) => { const u = new FakeUpstream(url); ups.push(u); return u; }, setTimer: () => ({}), clearTimer: () => {} });
+  client.emit('message', JSON.stringify({ type: 'start' }), false);
+  ups[0].open();
+  for (let i = 0; i < 90; i++) client.emit('message', Buffer.alloc(32000), true); // 90 s
+  client.emit('close');
+  assert.deepEqual(rows, [{ user_id: null, activity: 'session', provider: 'deepgram', model: 'nova-3', audio_seconds: 90, cost_usd: 0.01155 }]);
+});
