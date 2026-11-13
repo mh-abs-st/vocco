@@ -3,6 +3,7 @@
 // as Deepgram's word times because every sample is streamed.
 
 import { analyzeFrame, floatToInt16, FRAME, HOP, SAMPLE_RATE } from '@vocco/shared/pitch';
+import { supportProblem } from '../lib/support';
 
 export type VoiceFrame = { t: number; db: number; hz: number | null };
 
@@ -19,6 +20,7 @@ export type MicOptions = {
   deviceId?: string;
   onFrame?: (f: VoiceFrame) => void;
   onPcm?: (pcm: Int16Array) => void;
+  onState?: (state: AudioContextState) => void;
 };
 
 export class Mic {
@@ -38,17 +40,41 @@ export class Mic {
     return this.samples / SAMPLE_RATE;
   }
 
+  /** Is audio flowing? (Safari can leave it paused until the page is tapped.) */
+  get running() {
+    return this.ctx?.state === 'running';
+  }
+
   async start() {
+    // Create the audio context first, synchronously: when start() is called from a click, Safari still counts it
+    // as part of that click and lets audio run.
+    this.ctx = new AudioContext();
+    const ctx = this.ctx;
+    ctx.onstatechange = () => {
+      // A phone call or another app can pause audio (iOS: 'interrupted'). Try to carry on.
+      if ((ctx.state as string) === 'interrupted' || ctx.state === 'suspended') void ctx.resume().catch(() => {});
+      this.opts.onState?.(ctx.state);
+    };
+    void ctx.resume().catch(() => {});
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { ...MIC_AUDIO, ...(this.opts.deviceId ? { deviceId: { exact: this.opts.deviceId } } : {}) },
     });
-    this.ctx = new AudioContext();
-    await this.ctx.audioWorklet.addModule('/capture-worklet.js');
-    const src = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, 'capture-16k');
+    await ctx.audioWorklet.addModule('/capture-worklet.js');
+    const src = ctx.createMediaStreamSource(this.stream);
+    this.node = new AudioWorkletNode(ctx, 'capture-16k');
     this.node.port.onmessage = (e: MessageEvent<Float32Array>) => this.onChunk(e.data);
     src.connect(this.node);
-    // Not connected to the speakers: nothing is played back.
+    // Safari only runs a worklet that leads to the speakers: connect it through a muted gain (nothing is heard).
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    this.node.connect(mute).connect(ctx.destination);
+    if (ctx.state !== 'running') await ctx.resume().catch(() => {});
+  }
+
+  /** Start audio after a tap, when the browser kept it paused. Returns true when it's running. */
+  async resume() {
+    await this.ctx?.resume().catch(() => {});
+    return this.running;
   }
 
   setHandlers(opts: Omit<MicOptions, 'deviceId'>) {
@@ -90,5 +116,7 @@ export function micError(err: unknown): string {
   if (name === 'NotAllowedError' || name === 'SecurityError') return 'Vocco can’t use your microphone. Allow it in the address bar, then try again.';
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No microphone found. Plug one in or pick another, then try again.';
   if (name === 'NotReadableError') return 'Another app is using your microphone. Close it, then try again.';
+  const unsupported = supportProblem();
+  if (unsupported) return unsupported;
   return 'The microphone couldn’t start. Try again, or pick another one.';
 }

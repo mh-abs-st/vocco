@@ -7,6 +7,7 @@ import type { Screen } from '../App';
 import type { SessionSetup, Topic } from '../lib/types';
 import { loadPrefs, savePrefs } from '../lib/history';
 import { Mic, listMics, micError, type VoiceFrame } from '../audio/mic';
+import { supportProblem } from '../lib/support';
 
 const LENGTHS = [1, 2, 3, 5];
 const PREP = [0, 15, 30];
@@ -22,6 +23,7 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState(prefs.deviceId ?? '');
   const [baseline, setBaseline] = useState(prefs.baseline);
+  const unsupported = supportProblem();
 
   useEffect(() => {
     listMics().then(setMics).catch(() => {});
@@ -47,7 +49,7 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
             <span className="label">Your side</span>
             <div className="chips">
               {(['for', 'against'] as const).map((s) => (
-                <button key={s} className={`chip ${side === s ? 'on' : ''}`} onClick={() => setSide(s)}>{s === 'for' ? 'For the motion' : 'Against'}</button>
+                <button key={s} aria-pressed={side === s} className={`chip ${side === s ? 'on' : ''}`} onClick={() => setSide(s)}>{s === 'for' ? 'For the motion' : 'Against'}</button>
               ))}
             </div>
           </div>
@@ -60,7 +62,7 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
             <span className="label">How long</span>
             <div className="chips">
               {LENGTHS.map((m) => (
-                <button key={m} className={`chip ${minutes === m ? 'on' : ''}`} onClick={() => setMinutes(m)}>{m} min</button>
+                <button key={m} aria-pressed={minutes === m} className={`chip ${minutes === m ? 'on' : ''}`} onClick={() => setMinutes(m)}>{m} min</button>
               ))}
             </div>
           </div>
@@ -68,7 +70,7 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
             <span className="label">Time to think first</span>
             <div className="chips">
               {PREP.map((p) => (
-                <button key={p} className={`chip ${prepSeconds === p ? 'on' : ''}`} onClick={() => setPrep(p)}>{p ? `${p} s` : 'None'}</button>
+                <button key={p} aria-pressed={prepSeconds === p} className={`chip ${prepSeconds === p ? 'on' : ''}`} onClick={() => setPrep(p)}>{p ? `${p} s` : 'None'}</button>
               ))}
             </div>
           </div>
@@ -76,7 +78,7 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
             <span className="label">Coach me live on</span>
             <div className="chips">
               {GOALS.map((g) => (
-                <button key={g.id} className={`chip ${goals.includes(g.id) ? 'on' : ''}`} title={g.hint} onClick={() => toggleGoal(g.id)}>{g.label}</button>
+                <button key={g.id} aria-pressed={goals.includes(g.id)} className={`chip ${goals.includes(g.id) ? 'on' : ''}`} title={g.hint} onClick={() => toggleGoal(g.id)}>{g.label}</button>
               ))}
             </div>
             <span className="small muted">Everything is in the report either way. Fewer live cues are easier to follow.</span>
@@ -111,8 +113,9 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
         </div>
       </div>
 
+      {unsupported && <p className="note warn" role="alert">{unsupported}</p>}
       <div className="row end">
-        <button className="btn primary big" onClick={start}>Start speaking</button>
+        <button className="btn primary big" disabled={Boolean(unsupported)} onClick={start}>Start speaking</button>
       </div>
     </div>
   );
@@ -161,15 +164,15 @@ function MicCheck({ deviceId, done, onDone }: { deviceId: string; done: boolean;
       {state === 'listening' ? (
         <>
           <p className="read-line">“{CHECK_LINE}”</p>
-          <div className="meter" aria-label="Mic level"><div style={{ width: `${level * 100}%` }} /></div>
+          <div className="meter" role="img" aria-label={`Mic level ${Math.round(level * 100)}%`}><div style={{ width: `${level * 100}%` }} /></div>
         </>
       ) : (
         <p className="small muted">
           {state === 'ok' ? 'Done: Vocco knows your normal volume and voice.' : 'Read one line out loud (6 seconds) so the coach knows your normal volume and voice.'}
         </p>
       )}
-      {error && <p className="note warn">{error}</p>}
-      {state !== 'listening' && <button className="btn" onClick={run}>{state === 'ok' ? 'Check again' : 'Check my mic'}</button>}
+      {error && <p className="note warn" role="alert">{error}</p>}
+      {state !== 'listening' && <button className="btn" disabled={Boolean(supportProblem())} onClick={run}>{state === 'ok' ? 'Check again' : 'Check my mic'}</button>}
     </div>
   );
 }

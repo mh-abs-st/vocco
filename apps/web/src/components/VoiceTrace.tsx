@@ -69,5 +69,5 @@ export function VoiceTrace({ frames, now, baselineHz }: { frames: RefObject<Voic
     return () => cancelAnimationFrame(raf);
   }, [frames, now, baselineHz]);
 
-  return <canvas ref={canvas} className="voice-trace" aria-label="Your pitch and loudness" />;
+  return <canvas ref={canvas} className="voice-trace" aria-hidden="true" />;
 }

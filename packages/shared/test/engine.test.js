@@ -147,3 +147,25 @@ test('a lost connection is not a hesitation, not talking time, and "Pick it back
   assert.equal(r.tick(33), null); // only 3 s since the connection came back
   assert.equal(r.tick(36.5)?.kind, 'resume');
 });
+
+test('short talks get 5-second pace points, long ones 10', () => {
+  const short = summarize({ words: speak(lorem(120), { start: 0, wpm: 150, stopGap: 0.3 }), frames: [] });
+  assert.equal(short.paceBucketSec, 5);
+  assert.ok(short.paceSeries.length >= 9, String(short.paceSeries.length)); // ~50 s → ~10 points
+  const long = summarize({ words: speak(lorem(300), { start: 0, wpm: 150, stopGap: 0.3 }), frames: [] });
+  assert.equal(long.paceBucketSec, 10);
+});
+
+test('timeline flags point at their word', () => {
+  const words = [...speak('Um, today I want to', { start: 0 }), ...speak('talk about sleep.', { start: 3 })];
+  const c = createCoach({ goals: ['fillers'] });
+  c.promptEnded(0);
+  c.addWords(words);
+  c.tick(5); // shows a cue at t=5
+  const s = c.summary();
+  const hes = s.timeline.find((f) => f.kind === 'hesitation');
+  assert.equal(words[hes.i].text, 'talk');
+  const fil = s.timeline.find((f) => f.kind === 'filler');
+  assert.equal(words[fil.i].text, 'Um,');
+  for (const f of s.timeline) assert.ok(Number.isInteger(f.i) && f.i >= 0 && f.i < words.length, JSON.stringify(f));
+});

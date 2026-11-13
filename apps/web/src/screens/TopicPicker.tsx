@@ -33,10 +33,10 @@ export function TopicPicker({ go }: { go: (s: Screen) => void }) {
         </div>
       </form>
 
-      <div className="chips" role="tablist" aria-label="Categories">
-        <button role="tab" aria-selected={!cat} className={`chip ${!cat ? 'on' : ''}`} onClick={() => setCat('')}>All</button>
+      <div className="chips" role="group" aria-label="Categories">
+        <button aria-pressed={!cat} className={`chip ${!cat ? 'on' : ''}`} onClick={() => setCat('')}>All</button>
         {CATEGORIES.map((c) => (
-          <button key={c.id} role="tab" aria-selected={cat === c.id} className={`chip ${cat === c.id ? 'on' : ''}`} onClick={() => setCat(c.id)}>
+          <button key={c.id} aria-pressed={cat === c.id} className={`chip ${cat === c.id ? 'on' : ''}`} onClick={() => setCat(c.id)}>
             {c.label}
           </button>
         ))}

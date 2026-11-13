@@ -3,6 +3,7 @@ import type { Screen } from '../App';
 import { deleteSession, loadHistory } from '../lib/history';
 import { fetchHealth } from '../lib/api';
 import { when } from '../lib/format';
+import { supportProblem } from '../lib/support';
 
 const MODES = [
   { id: 'coach', title: 'Talk on a topic', text: 'Speak for 1–5 minutes. Your coach cues you live, then gives you a report.', ready: true },
@@ -25,6 +26,7 @@ export function Home({ go }: { go: (s: Screen) => void }) {
         <h1>Practice out loud. Get coached while you speak.</h1>
         <p className="lead">Pick a topic and talk. Vocco listens and tells you when to start, pause, slow down, lift your voice and say it clearly. Then you get a report with what to fix.</p>
         <button className="btn primary big" onClick={() => go({ name: 'topics' })}>Pick a topic</button>
+        {supportProblem() && <p className="note warn">{supportProblem()}</p>}
         {health === null && <p className="note warn">Can’t reach the Vocco server. Start it with <code>npm run dev</code>, then reload.</p>}
         {health && !health.listening && <p className="note warn">Listening isn’t set up on this server yet: add a speech-to-text key to the server’s .env.</p>}
       </section>

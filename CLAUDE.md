@@ -37,4 +37,5 @@ credits, payments): copy and adapt, never import from it or share its accounts/d
 - Privacy: nothing about a session is stored on the server; history lives in the browser. Deepgram `mip_opt_out` stays on.
 - User-facing copy: plain, short, says what to do next. Errors are sentences a person can act on ("Allow the mic in the address bar, then try again").
 - Coaching cues: one at a time, few words, an action ("Slow down", "Pause"), never a judgement.
+- Accessibility: text colours at least 4.5:1 (see DECISIONS.md → Accessibility), real buttons with visible focus, `aria-pressed` on choice chips, announce live changes through the hidden status line in `Session.tsx` (not by making busy elements live regions).
 - Never commit `.env` or keys.
