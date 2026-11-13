@@ -46,6 +46,13 @@ async function readJson(req) {
  */
 export function createApp(config, deps) {
   const { guard } = deps;
+  const db = deps.db?.enabled ? deps.db : null; // accounts on = sign-in required
+
+  /** The signed-in user from `Authorization: Bearer <token>`, or null. */
+  async function userFrom(req) {
+    const m = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''));
+    return m && db ? db.getUser(m[1].trim()) : null;
+  }
   const log = deps.log || console.log;
   const webRoot = deps.webRoot ?? (config.webDist ? resolve(process.cwd(), config.webDist) : '');
 
@@ -79,11 +86,31 @@ export function createApp(config, deps) {
     const cors = origin && originAllowed(origin, config.allowedOrigins) ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {};
     try {
       if (req.method === 'OPTIONS') {
-        res.writeHead(204, { ...cors, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '600' });
+        res.writeHead(204, { ...cors, 'access-control-allow-methods': 'GET, POST, DELETE', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '600' });
         return res.end();
       }
       if (url.pathname === '/health') {
         return json(res, 200, { ok: true, listening: Boolean(config.deepgramKey), reports: Boolean(config.anthropicKey), accounts: Boolean(deps.db?.enabled) }, cors);
+      }
+      // What the web app needs to know before sign-in: are accounts on, and the public Supabase settings.
+      if (url.pathname === '/api/config' && req.method === 'GET') {
+        return json(res, 200, db ? { accounts: true, supabaseUrl: config.supabaseUrl, publishableKey: config.supabasePublishableKey } : { accounts: false }, cors);
+      }
+      if (url.pathname === '/api/me' && req.method === 'GET') {
+        if (!db) return json(res, 404, { error: 'Accounts aren’t set up on this server.' }, cors);
+        const user = await userFrom(req);
+        if (!user) return json(res, 401, { error: 'Sign in again.' }, cors);
+        const acc = await db.getAccount(user.id, user.email);
+        return json(res, 200, { email: user.email, credits: acc.credits ?? 0 }, cors);
+      }
+      if (url.pathname === '/api/account' && req.method === 'DELETE') {
+        if (!db) return json(res, 404, { error: 'Accounts aren’t set up on this server.' }, cors);
+        if (origin && !originAllowed(origin, config.allowedOrigins)) return json(res, 403, { error: 'Not allowed from this site.' });
+        const user = await userFrom(req);
+        if (!user) return json(res, 401, { error: 'Sign in again to delete your account.' }, cors);
+        await db.deleteUser(user.id);
+        log(`[account] deleted ${user.id}`);
+        return json(res, 200, { deleted: true }, cors);
       }
       if (url.pathname === '/api/topics' && req.method === 'GET') {
         return json(res, 200, { categories: CATEGORIES, topics: TOPICS }, { ...cors, 'cache-control': 'public, max-age=300' });
@@ -91,7 +118,9 @@ export function createApp(config, deps) {
       if (url.pathname === '/api/report' && req.method === 'POST') {
         if (origin && !originAllowed(origin, config.allowedOrigins)) return json(res, 403, { error: 'Not allowed from this site.' });
         const ip = clientIp(req, config.trustProxy);
-        if (!guard.allowReport(ip)) return json(res, 429, { error: 'That’s a lot of reports in an hour. Try again a bit later.' }, cors);
+        const user = await userFrom(req);
+        if (db && !user) return json(res, 401, { error: 'Sign in again to get your report.' }, cors);
+        if (!guard.allowReport(ip, ...(user ? [`user:${user.id}`] : []))) return json(res, 429, { error: 'That’s a lot of reports in an hour. Try again a bit later.' }, cors);
         const body = await readJson(req);
         const bad = checkReportBody(body);
         if (bad) return json(res, 400, { error: bad }, cors);

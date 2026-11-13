@@ -14,7 +14,9 @@ const LANG_IDS = new Set(LANGUAGES.map((l) => l.id));
 /**
  * @param {any} client
  * @param {{ ip: string, config: ReturnType<import('./config.js').loadConfig>, guard: ReturnType<import('./guard.js').createGuard>,
+ *           auth?: (token: string) => Promise<{ id: string, email: string } | null>,
  *           open?: (url: string) => any, log?: (line: string) => void, setTimer?: typeof setTimeout, clearTimer?: typeof clearTimeout }} ctx
+ *   `auth`: when accounts are on, checks the sign-in token sent with 'start'; no auth = no sign-in needed.
  */
 export function handleSession(client, ctx) {
   const { ip, config, guard } = ctx;
@@ -23,9 +25,12 @@ export function handleSession(client, ctx) {
   const setTimer = ctx.setTimer || setTimeout;
   const clearTimer = ctx.clearTimer || clearTimeout;
 
-  let state = 'waiting'; // waiting → connecting → live → closing → done
+  let state = 'waiting'; // waiting → checking (sign-in) → connecting → live → closing → done
   let upstream = null;
-  let slot = false;
+  /** @type {string[]} guard keys we hold a session slot for (the address, and the user when signed in) */
+  let slots = [];
+  /** @type {{ id: string, email: string } | null} */
+  let user = null;
   let pending = [];
   let pendingBytes = 0;
   let bytes = 0;
@@ -46,8 +51,8 @@ export function handleSession(client, ctx) {
     state = 'done';
     if (limitTimer) clearTimer(limitTimer);
     if (keepAlive) clearInterval(keepAlive);
-    if (slot) guard.closeSession(ip);
-    slot = false;
+    for (const k of slots) guard.closeSession(k);
+    slots = [];
     if (final) send(final);
     send({ type: 'closed', seconds: seconds() });
     try { upstream?.close(); } catch {}
@@ -59,10 +64,25 @@ export function handleSession(client, ctx) {
     finish({ type: 'error', message });
   }
 
-  function start(msg) {
+  async function start(msg) {
     if (!config.deepgramKey) return fail('Listening isn’t set up on this server yet (no speech-to-text key).');
-    if (!guard.openSession(ip)) return finish({ type: 'limit', reason: 'sessions', message: 'You already have a session open. Close it first, then try again.' });
-    slot = true;
+    state = 'checking';
+    if (ctx.auth) {
+      try {
+        user = msg.token ? await ctx.auth(String(msg.token)) : null;
+      } catch {
+        user = null;
+      }
+      if (state !== 'checking') return; // the browser left meanwhile
+      if (!user) return finish({ type: 'error', reason: 'auth', message: 'Sign in again to start a session.' });
+    }
+    const keys = user ? [ip, `user:${user.id}`] : [ip];
+    for (const k of keys) {
+      if (!guard.openSession(k)) {
+        return finish({ type: 'limit', reason: 'sessions', message: 'You already have a session open. Close it first, then try again.' });
+      }
+      slots.push(k);
+    }
     sampleRate = [16000, 24000, 48000].includes(Number(msg.sampleRate)) ? Number(msg.sampleRate) : 16000;
     language = LANG_IDS.has(msg.language) ? msg.language : 'en';
     state = 'connecting';
@@ -120,7 +140,7 @@ export function handleSession(client, ctx) {
     }
     let msg;
     try { msg = JSON.parse(String(data)); } catch { return; }
-    if (msg?.type === 'start' && state === 'waiting') return start(msg);
+    if (msg?.type === 'start' && state === 'waiting') return void start(msg);
     if (msg?.type === 'stop') {
       if (state === 'live') {
         state = 'closing';
@@ -135,5 +155,5 @@ export function handleSession(client, ctx) {
   client.on('close', () => finish(null));
   client.on('error', () => finish(null));
 
-  return { state: () => state, seconds };
+  return { state: () => state, seconds, user: () => user };
 }

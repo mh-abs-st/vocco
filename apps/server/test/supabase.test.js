@@ -101,3 +101,15 @@ test('trial claims and cost rows', async () => {
   assert.equal(await db.insertApiCosts([]), null);
   assert.equal(f.calls.length, 2);
 });
+
+test('deleteUser calls the Auth admin API with the server key and forgets cached sign-ins', async () => {
+  const f = fakeFetch((c) => (c.url.endsWith('/auth/v1/user') ? [200, { id: 'u1', email: 'a@example.com' }] : [200, {}]));
+  const db = createSupabase({ url: URL_, key: 'sb_secret_k', fetchImpl: f });
+  await db.getUser('tok');
+  await db.deleteUser('u1');
+  assert.equal(f.calls[1].url, 'https://abc.supabase.co/auth/v1/admin/users/u1');
+  assert.equal(f.calls[1].method, 'DELETE');
+  assert.equal(f.calls[1].headers.apikey, 'sb_secret_k');
+  await db.getUser('tok');
+  assert.equal(f.calls.length, 3); // asked Supabase again: the cache entry was dropped
+});

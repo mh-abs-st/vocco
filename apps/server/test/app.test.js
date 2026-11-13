@@ -63,3 +63,50 @@ test('the web app is served, with app routes falling back to index.html', async 
   assert.doesNotMatch(await traversal.text(), /root:/);
   assert.equal((await realFetch(`${base}/api/nope`)).status, 404);
 });
+
+// ----- sign-in (#9): a second app with accounts on, Supabase faked -----
+test('with accounts on: config, me, report needs sign-in, delete account', async () => {
+  const deleted = [];
+  const db = {
+    enabled: true,
+    getUser: async (t) => (t === 'good' ? { id: 'u1', email: 'a@example.com' } : null),
+    getAccount: async () => ({ user_id: 'u1', credits: 12 }),
+    deleteUser: async (id) => deleted.push(id),
+  };
+  const config = loadConfig({ ANTHROPIC_API_KEY: 'k', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_s', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_p' });
+  const srv = createServer(createApp(config, { guard: createGuard(config), db, fetchImpl: claude, log: () => {}, webRoot: '' }));
+  await new Promise((r) => srv.listen(0, r));
+  const b = `http://127.0.0.1:${srv.address().port}`;
+  const auth = { authorization: 'Bearer good' };
+  try {
+    const cfg = await (await realFetch(`${b}/api/config`)).json();
+    assert.deepEqual(cfg, { accounts: true, supabaseUrl: 'https://x.supabase.co', publishableKey: 'sb_publishable_p' });
+    assert.ok(!JSON.stringify(cfg).includes('sb_secret')); // the secret key never leaves the server
+
+    assert.equal((await realFetch(`${b}/api/me`)).status, 401);
+    assert.deepEqual(await (await realFetch(`${b}/api/me`, { headers: auth })).json(), { email: 'a@example.com', credits: 12 });
+
+    const body = JSON.stringify({ transcript: 'Hi.', summary: { wpm: 140 } });
+    const noAuth = await realFetch(`${b}/api/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    assert.equal(noAuth.status, 401);
+    assert.match((await noAuth.json()).error, /Sign in/);
+    const badAuth = await realFetch(`${b}/api/report`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer bad' }, body });
+    assert.equal(badAuth.status, 401);
+    const ok = await realFetch(`${b}/api/report`, { method: 'POST', headers: { 'content-type': 'application/json', ...auth }, body });
+    assert.equal(ok.status, 200);
+
+    assert.equal((await realFetch(`${b}/api/account`, { method: 'DELETE' })).status, 401);
+    const del = await realFetch(`${b}/api/account`, { method: 'DELETE', headers: auth });
+    assert.deepEqual(await del.json(), { deleted: true });
+    assert.deepEqual(deleted, ['u1']);
+    assert.equal((await (await realFetch(`${b}/health`)).json()).accounts, true);
+  } finally {
+    srv.close();
+  }
+});
+
+test('without accounts: config says so, and me/account aren’t there', async () => {
+  const r = await (await realFetch(`${base}/api/config`)).json();
+  assert.deepEqual(r, { accounts: false });
+  assert.equal((await realFetch(`${base}/api/me`)).status, 404);
+});

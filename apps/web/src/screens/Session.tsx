@@ -7,6 +7,7 @@ import { Mic, micError, type VoiceFrame } from '../audio/mic';
 import { SessionSocket, type ServerMessage } from '../lib/session-socket';
 import { saveSession } from '../lib/history';
 import { clock, newId } from '../lib/format';
+import { accessToken, getAuth, sessionRejected } from '../lib/auth';
 import { VoiceTrace } from '../components/VoiceTrace';
 
 type Phase = 'connecting' | 'prep' | 'live' | 'lost' | 'reconnecting' | 'ending' | 'error';
@@ -78,14 +79,17 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       setP('lost');
     }
 
-    function connect() {
+    async function connect() {
       let resolveClosed: () => void = () => {};
       sockClosed = new Promise<void>((r) => (resolveClosed = r));
+      // With accounts on, every connection carries a fresh sign-in token.
+      const token = getAuth().accounts ? await accessToken() : null;
+      if (cancelled) return;
       const s: SessionSocket = new SessionSocket((m) => {
         if (m.type === 'closed') resolveClosed();
         if (cancelled || s !== sock) return; // an old connection
         onMessage(m);
-      }, { language: setup.language });
+      }, { language: setup.language, token });
       sock = s;
     }
 
@@ -110,6 +114,14 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       } else if (m.type === 'limit') {
         setNotice(m.message);
         void finish();
+      } else if (m.type === 'error' && m.reason === 'auth') {
+        sessionRejected();
+        if (phase === 'live' || phase === 'reconnecting' || phase === 'lost') lose('You were signed out. Get your numbers now; sign in again for the coach’s notes.');
+        else {
+          setError('You were signed out. Sign in again, then start the session.');
+          setP('error');
+          void mic.stop();
+        }
       } else if (m.type === 'error') {
         if (phase === 'live') lose(m.message || 'Lost the connection. What you said so far is safe.');
         else if (phase === 'reconnecting') lose('Couldn’t reconnect. Check your connection, then try again.');
@@ -140,7 +152,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
       },
     });
 
-    connect();
+    void connect();
     mic
       .start()
       .then(() => {
@@ -184,7 +196,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     reconnectRef.current = () => {
       if (ended || phaseRef.current !== 'lost') return;
       setP('reconnecting');
-      connect();
+      void connect();
     };
 
     const timer = setInterval(() => {

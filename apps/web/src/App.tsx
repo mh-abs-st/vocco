@@ -5,18 +5,40 @@ import { TopicPicker } from './screens/TopicPicker';
 import { Setup } from './screens/Setup';
 import { Session } from './screens/Session';
 import { ReportScreen } from './screens/Report';
+import { SignIn } from './screens/SignIn';
+import { Account } from './screens/Account';
+import { getAuth, init as initAuth, onAuth, type AuthState } from './lib/auth';
+import { takeNext } from './lib/next';
 
 export type Screen =
   | { name: 'home' }
   | { name: 'topics' }
   | { name: 'setup'; topic: Topic }
   | { name: 'session'; setup: SessionSetup }
-  | { name: 'report'; result: SessionResult };
+  | { name: 'report'; result: SessionResult }
+  | { name: 'signin'; next?: Screen }
+  | { name: 'account' };
 
 export function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
+  const [auth, setAuth] = useState<AuthState>(getAuth);
   const main = useRef<HTMLElement>(null);
   const first = useRef(true);
+
+  // Sign-in state: config from the server, a session from the URL after signing in, or a saved one.
+  useEffect(() => {
+    const off = onAuth(setAuth);
+    void initAuth().then(() => {
+      const a = getAuth();
+      // Back from an email link or Google: carry on where they were heading.
+      if (a.session) {
+        const next = takeNext();
+        if (next) go(next);
+      } else if (a.error) go({ name: 'signin' });
+    });
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A new screen: move keyboard and screen-reader focus to its heading (or the main area), like a page load.
   useEffect(() => {
@@ -37,11 +59,21 @@ export function App() {
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
   }, []);
-  const go = (s: Screen) => {
+
+  function go(target: Screen) {
+    const a = getAuth();
+    let s = target;
+    // With accounts on, a session needs sign-in; so does the account page.
+    if (a.accounts && !a.session && (s.name === 'session' || s.name === 'account')) s = { name: 'signin', next: s.name === 'session' ? s : undefined };
     if (s.name !== 'home') history.pushState(null, '');
     setScreen(s);
     scrollTo(0, 0);
-  };
+  }
+
+  // Signed out while on the account page (sign out, delete, or the server rejected the session).
+  useEffect(() => {
+    if (auth.ready && !auth.session && screen.name === 'account') setScreen({ name: 'home' });
+  }, [auth, screen.name]);
 
   return (
     <div className="app">
@@ -51,6 +83,21 @@ export function App() {
           <img src="/favicon.svg" alt="" width={28} height={28} />
           <span>Vocco</span>
         </button>
+        {auth.accounts && screen.name !== 'session' && (
+          <nav className="account-nav" aria-label="Account">
+            {auth.session ? (
+              <button className="btn ghost small" onClick={() => go({ name: 'account' })} title={auth.session.email}>
+                Account
+              </button>
+            ) : (
+              screen.name !== 'signin' && (
+                <button className="btn small" onClick={() => go({ name: 'signin' })}>
+                  Sign in
+                </button>
+              )
+            )}
+          </nav>
+        )}
       </header>
       <main id="main" ref={main} tabIndex={-1}>
         {screen.name === 'home' && <Home go={go} />}
@@ -58,6 +105,8 @@ export function App() {
         {screen.name === 'setup' && <Setup topic={screen.topic} go={go} />}
         {screen.name === 'session' && <Session setup={screen.setup} go={go} />}
         {screen.name === 'report' && <ReportScreen result={screen.result} go={go} />}
+        {screen.name === 'signin' && <SignIn go={go} next={screen.next} error={auth.error} />}
+        {screen.name === 'account' && auth.session && <Account go={go} session={auth.session} />}
       </main>
     </div>
   );

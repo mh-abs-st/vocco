@@ -158,3 +158,7 @@ main:focus, h1:focus { outline: none; } /* focused by the app on a new screen, n
 .moment:hover:not(:disabled) { text-decoration: underline; }
 .moment[aria-pressed='true'] { font-weight: 600; }
 .stat .prev { color: var(--ink-2); border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+.topbar { justify-content: space-between; }
+.signin { max-width: 520px; }
+.google { display: block; text-align: center; text-decoration: none; }
+.or { text-align: center; color: var(--muted); font-size: 0.86rem; }

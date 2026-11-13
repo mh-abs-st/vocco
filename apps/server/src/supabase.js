@@ -94,6 +94,14 @@ export function createSupabase({ url = '', key = '', fetchImpl = globalThis.fetc
     },
     addTrialClaims: (rows) => rest('trial_claims', { method: 'POST', body: rows }),
 
+    /** Delete a user from Supabase Auth; their account and ledger go with them (on delete cascade). */
+    async deleteUser(userId) {
+      if (!enabled) throw new DatabaseError('Accounts aren’t set up on this server.');
+      const res = await fetchImpl(`${base}/auth/v1/admin/users/${enc(userId)}`, { method: 'DELETE', headers: serverHeaders(key) });
+      if (!res.ok && res.status !== 404) throw new DatabaseError(`Auth error ${res.status}`, { status: res.status, body: (await res.text()).slice(0, 500) });
+      for (const [token, hit] of userCache) if (hit.user.id === userId) userCache.delete(token);
+    },
+
     // Cost rows (#12): numbers only.
     insertApiCosts: (rows) => (rows.length ? rest('api_costs', { method: 'POST', body: rows }) : null),
 
