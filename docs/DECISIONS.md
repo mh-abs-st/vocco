@@ -36,6 +36,15 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **Try again goes straight into a new session** with the same topic and settings (and the newest mic-check numbers); **Change settings** goes to Setup.
 - **"Last time"** under each stat = the previous session on the same topic (matched by the prompt text, so custom topics compare too), from the browser's history.
 
+## Accessibility (#6, 2026-11-13)
+
+- **Colours meet WCAG AA** for text: muted grey `#5f6678` (5.4:1 on the background), the live cue banner `--cue` `#c8452a` with white text (4.8:1; the lighter coral was 2.6:1), the "good pace" green `#1f7a5a` (5.3:1). Check new colours before adding them.
+- **Keyboard:** everything is a real button, input or select; every focused control shows a 3px outline; a "Skip to content" link comes first; on each new screen, focus moves to its heading (`App.tsx`).
+- **Choice chips are toggle buttons** (`aria-pressed`), not tabs: they don't behave like a tab list.
+- **Screen readers on the live screen:** the visible cue box isn't a live region (it redraws a lot). A hidden status line announces only real changes: you're on, each new cue once, connection lost, reconnecting, writing the report. The pitch canvas is hidden from them; the pace chart and score bars have text equivalents.
+- **Reduced motion** turns off transitions, hover movement and smooth scrolling.
+- Checked with Playwright: a full session with the keyboard only, focus outlines, announcements. No automated checker (axe) in the cloud workspace yet — worth adding to CI.
+
 ## Browsers (#4, 2026-11-13)
 
 - **Supported:** recent Chrome, Edge, Safari (macOS + iOS 14.5+) and Firefox, desktop and phone. Needs https (or localhost), `getUserMedia`, `AudioWorklet` and WebSocket; otherwise Home and Setup say so and Start is off (`apps/web/src/lib/support.ts`).

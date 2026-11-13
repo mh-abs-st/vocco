@@ -53,7 +53,8 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
   const wordRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const show = (i: number) => {
     setActive(i);
-    void wordRefs.current[i]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    void wordRefs.current[i]?.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
   };
 
   if (!s.spoke) {
@@ -107,7 +108,7 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
         {loading && <p className="muted">Your coach is reading your session…</p>}
         {error && (
           <div className="row wrap">
-            <p className="note warn">{error}</p>
+            <p className="note warn" role="alert">{error}</p>
             <button className="btn" onClick={load}>Try again</button>
           </div>
         )}
@@ -117,7 +118,7 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
               {Object.entries(report.scores).map(([k, v]) => (
                 <div key={k} className="score">
                   <span className="small">{SCORE_LABELS[k] || k}</span>
-                  <div className="score-bar" aria-label={`${SCORE_LABELS[k]} ${v} of 5`}><div style={{ width: `${(v / 5) * 100}%` }} /></div>
+                  <div className="score-bar" role="img" aria-label={`${SCORE_LABELS[k]} ${v} of 5`}><div style={{ width: `${(v / 5) * 100}%` }} /></div>
                   <span className="small muted">{v}/5</span>
                 </div>
               ))}

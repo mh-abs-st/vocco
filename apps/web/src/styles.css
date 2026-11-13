@@ -1,13 +1,14 @@
 :root {
   --ink: #1f2a44;
   --ink-2: #4a5470;
-  --muted: #6b7286;
+  --muted: #5f6678; /* 5.4:1 on the paper background (WCAG AA) */
   --paper: #fbf8f3;
   --card: #ffffff;
   --line: #e8e2d8;
   --accent: #ff7a59;
   --accent-ink: #b8442a;
-  --good: #2ea078;
+  --good: #1f7a5a; /* 5.3:1 on white */
+  --cue: #c8452a; /* white text on it: 4.8:1 */
   --warn-bg: #fff3e8;
   --warn: #9a4a12;
   --radius: 16px;
@@ -74,7 +75,17 @@ button.card:disabled { cursor: default; opacity: 0.6; box-shadow: none; }
 .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 .field { display: flex; flex-direction: column; gap: 8px; }
 input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; width: 100%; }
-input:focus, select:focus, .btn:focus-visible, .chip:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Keyboard focus is always visible (and thicker than hover styles). */
+input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--cue); outline-offset: 2px; }
+.cue.on button:focus-visible { outline-color: #fff; }
+main:focus, h1:focus { outline: none; } /* focused by the app on a new screen, not by the user */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip { position: absolute; left: 12px; top: -48px; background: var(--ink); color: #fff; padding: 8px 14px; border-radius: 8px; z-index: 10; text-decoration: none; }
+.skip:focus { top: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  button.card:hover:not(:disabled) { transform: none; }
+}
 
 .hero { padding: 36px 0 8px; display: flex; flex-direction: column; gap: 18px; align-items: flex-start; }
 .hero h1 { font-size: clamp(2rem, 5vw, 3.4rem); max-width: 14em; }
@@ -93,10 +104,10 @@ input:focus, select:focus, .btn:focus-visible, .chip:focus-visible, .card:focus-
 .session-topic { font-size: 1.3rem; max-width: 34em; }
 .timer { font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 600; }
 .cue { min-height: 96px; border-radius: var(--radius); padding: 18px 24px; display: flex; flex-direction: column; justify-content: center; gap: 4px; background: var(--card); border: 1px solid var(--line); transition: background 0.2s, color 0.2s; }
-.cue.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cue.on { background: var(--cue); border-color: var(--cue); color: #fff; }
 .cue-text { font-family: Fraunces, serif; font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 650; }
 .cue-text.quiet { color: var(--muted); font-size: 1.4rem; }
-.cue-detail { font-size: 1.05rem; opacity: 0.92; }
+.cue-detail { font-size: 1.05rem; }
 .session-grid { grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); }
 @media (max-width: 760px) {
   /* Phone: meters side by side above the transcript, so the cue, pace and voice stay in view while you talk. */

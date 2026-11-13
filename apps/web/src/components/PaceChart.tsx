@@ -8,7 +8,7 @@ export function PaceChart({ series, target, bucket = 10 }: { series: { t: number
   const y = (w: number) => H - PAD - (w / maxW) * (H - PAD * 2);
   const points = series.map((p) => `${x(mid(p.t))},${y(p.wpm)}`).join(' ');
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="pace-chart" role="img" aria-label="Pace over time">
+    <svg viewBox={`0 0 ${W} ${H}`} className="pace-chart" role="img" aria-label={describe(series, target)}>
       <rect x={PAD} width={W - PAD * 2} y={y(target[1])} height={y(target[0]) - y(target[1])} fill="rgba(46,160,120,0.12)" />
       <text x={W - PAD} y={y(target[1]) - 4} textAnchor="end" className="axis">comfortable {target[0]}–{target[1]}</text>
       <line x1={PAD} x2={W - PAD} y1={H - PAD} y2={H - PAD} stroke="rgba(31,42,68,0.2)" />
@@ -22,4 +22,13 @@ export function PaceChart({ series, target, bucket = 10 }: { series: { t: number
       <text x={W - PAD} y={H - 10} textAnchor="end" className="axis">{Math.floor(maxT / 60)}:{String(maxT % 60).padStart(2, '0')}</text>
     </svg>
   );
+}
+
+/** What the chart shows, for screen readers. */
+function describe(series: { t: number; wpm: number }[], target: number[]) {
+  if (!series.length) return 'Pace over time: not enough speech.';
+  const w = series.map((p) => p.wpm);
+  const over = series.filter((p) => p.wpm > target[1]).length;
+  const under = series.filter((p) => p.wpm < target[0]).length;
+  return `Pace over time: from ${w[0]} to ${w[w.length - 1]} words per minute, between ${Math.min(...w)} and ${Math.max(...w)}. ${over} of ${w.length} stretches above ${target[1]}, ${under} below ${target[0]}.`;
 }

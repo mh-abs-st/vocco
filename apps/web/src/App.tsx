@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SessionResult, SessionSetup, Topic } from './lib/types';
 import { Home } from './screens/Home';
 import { TopicPicker } from './screens/TopicPicker';
@@ -15,6 +15,21 @@ export type Screen =
 
 export function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' });
+  const main = useRef<HTMLElement>(null);
+  const first = useRef(true);
+
+  // A new screen: move keyboard and screen-reader focus to its heading (or the main area), like a page load.
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const h = main.current?.querySelector<HTMLElement>('h1');
+    if (h) {
+      h.tabIndex = -1;
+      h.focus();
+    } else main.current?.focus();
+  }, [screen]);
 
   // Browser Back goes to the previous screen (except out of a live session, which has its own End).
   useEffect(() => {
@@ -30,13 +45,14 @@ export function App() {
 
   return (
     <div className="app">
+      <a className="skip" href="#main">Skip to content</a>
       <header className="topbar">
         <button className="brand" onClick={() => screen.name !== 'session' && go({ name: 'home' })} aria-label="Vocco home">
           <img src="/favicon.svg" alt="" width={28} height={28} />
           <span>Vocco</span>
         </button>
       </header>
-      <main>
+      <main id="main" ref={main} tabIndex={-1}>
         {screen.name === 'home' && <Home go={go} />}
         {screen.name === 'topics' && <TopicPicker go={go} />}
         {screen.name === 'setup' && <Setup topic={screen.topic} go={go} />}
