@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fillerIndexes } from '@vocco/shared/words';
 import { CUES } from '@vocco/shared/cues';
 import type { Screen } from '../App';
 import type { Report, SessionResult } from '../lib/types';
 import { requestReport } from '../lib/api';
-import { saveSession } from '../lib/history';
+import { loadHistory, loadPrefs, saveSession } from '../lib/history';
 import { clock } from '../lib/format';
 import { PaceChart } from '../components/PaceChart';
 
@@ -36,7 +36,25 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
   }, []);
 
   const fillers = useMemo(() => fillerIndexes(result.words), [result.words]);
-  const again = () => go({ name: 'setup', topic: result.setup.topic });
+  // Same topic and settings again, straight into the session (the mic-check numbers may be newer).
+  const again = () => go({ name: 'session', setup: { ...result.setup, baseline: loadPrefs().baseline ?? result.setup.baseline } });
+  const changeSettings = () => go({ name: 'setup', topic: result.setup.topic });
+
+  // The last session on the same topic before this one, to compare numbers.
+  const prev = useMemo(
+    () => loadHistory().find((h) => h.id !== result.id && h.at < result.at && h.setup.topic.prompt === result.setup.topic.prompt && h.summary.spoke)?.summary,
+    [result],
+  );
+
+  // Moments: cues and hesitations, each pointing at a word in the transcript.
+  const moments = s.timeline.filter((f) => f.kind in CUES || f.kind === 'hesitation');
+  const hesitationAt = useMemo(() => new Map(s.timeline.filter((f) => f.kind === 'hesitation' && f.i != null).map((f) => [f.i as number, f.detail || ''])), [s.timeline]);
+  const [active, setActive] = useState<number | null>(null);
+  const wordRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const show = (i: number) => {
+    setActive(i);
+    void wordRefs.current[i]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
 
   if (!s.spoke) {
     return (
@@ -62,23 +80,25 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
         </div>
         <div className="row">
           <button className="btn primary" onClick={again}>Try again</button>
+          <button className="btn" onClick={changeSettings}>Change settings</button>
           <button className="btn" onClick={() => go({ name: 'topics' })}>New topic</button>
         </div>
       </div>
+      {prev && <p className="small muted">“Last time” is your previous session on this topic.</p>}
 
       <section className="grid stats">
-        <Stat label="Pace" value={`${s.wpm ?? 0}`} unit="words/min" hint={(s.wpm ?? 0) > 170 ? 'A bit fast' : (s.wpm ?? 0) < 110 ? 'A bit slow' : 'Comfortable'} />
-        <Stat label="Fillers" value={`${s.fillers?.count ?? 0}`} unit={`${s.fillers?.perMinute ?? 0} a minute`} hint={s.fillers?.words?.length ? s.fillers.words.map((w) => `“${w}”`).join(', ') : 'None'} />
-        <Stat label="Pauses" value={`${s.pauses?.good ?? 0}`} unit="well placed" hint={`${s.pauses?.hesitations ?? 0} hesitations`} />
-        <Stat label="Voice range" value={s.voice ? `${s.voice.rangeSemitones}` : '—'} unit="semitones" hint={s.voice ? (s.voice.rangeSemitones < 3 ? 'Quite flat' : 'Lively') : 'Not enough voice heard'} />
+        <Stat label="Pace" value={`${s.wpm ?? 0}`} unit="words/min" hint={(s.wpm ?? 0) > 170 ? 'A bit fast' : (s.wpm ?? 0) < 110 ? 'A bit slow' : 'Comfortable'} prev={prev && `${prev.wpm ?? 0}`} />
+        <Stat label="Fillers" value={`${s.fillers?.count ?? 0}`} unit={`${s.fillers?.perMinute ?? 0} a minute`} hint={s.fillers?.words?.length ? s.fillers.words.map((w) => `“${w}”`).join(', ') : 'None'} prev={prev && `${prev.fillers?.count ?? 0}`} />
+        <Stat label="Pauses" value={`${s.pauses?.good ?? 0}`} unit="well placed" hint={`${s.pauses?.hesitations ?? 0} hesitations`} prev={prev && `${prev.pauses?.good ?? 0}`} />
+        <Stat label="Voice range" value={s.voice ? `${s.voice.rangeSemitones}` : '—'} unit="semitones" hint={s.voice ? (s.voice.rangeSemitones < 3 ? 'Quite flat' : 'Lively') : 'Not enough voice heard'} prev={prev && (prev.voice ? `${prev.voice.rangeSemitones}` : '—')} />
         <Stat label="Talked" value={clock(s.durationSec ?? 0)} unit={`${s.words} words`} hint={s.connectionLostSec ? `Connection lost for ${Math.round(s.connectionLostSec)} s (not counted)` : `Started after ${s.startDelaySec ?? 0} s`} />
-        <Stat label="Sentences" value={`${s.sentences?.avgWords ?? 0}`} unit="words on average" hint={s.sentences?.runOns ? `${s.sentences.runOns} very long` : 'Easy to follow'} />
+        <Stat label="Sentences" value={`${s.sentences?.avgWords ?? 0}`} unit="words on average" hint={s.sentences?.runOns ? `${s.sentences.runOns} very long` : 'Easy to follow'} prev={prev && `${prev.sentences?.avgWords ?? 0}`} />
       </section>
 
       {s.paceSeries && s.paceSeries.length > 1 && (
         <section className="card">
           <h2 className="section-title">Pace over time</h2>
-          <PaceChart series={s.paceSeries} target={s.targetWpm ?? [130, 160]} />
+          <PaceChart series={s.paceSeries} target={s.targetWpm ?? [130, 160]} bucket={s.paceBucketSec ?? 10} />
         </section>
       )}
 
@@ -142,18 +162,36 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
         <h2 className="section-title">What you said</h2>
         <p className="transcript-final">
           {result.words.map((w, i) => (
-            <span key={i} className={fillers.has(i) ? 'w filler' : w.confidence < 0.55 ? 'w unclear' : 'w'}>{w.text} </span>
+            <span key={i}>
+              {hesitationAt.has(i) && <span className="hes" title={`Hesitation: ${hesitationAt.get(i)}`}>{hesitationAt.get(i)}</span>}
+              <span
+                ref={(el) => {
+                  wordRefs.current[i] = el;
+                }}
+                className={`${fillers.has(i) ? 'w filler' : w.confidence < 0.55 ? 'w unclear' : 'w'}${active === i ? ' active' : ''}`}
+              >
+                {w.text}
+              </span>{' '}
+            </span>
           ))}
         </p>
-        <p className="small muted"><span className="w filler">Filler</span> · <span className="w unclear">Not clear</span></p>
+        <p className="small muted">
+          <span className="w filler">Filler</span> · <span className="w unclear">Not clear</span> · <span className="hes">0.8 s</span> Hesitation (a long stop mid-sentence)
+        </p>
       </section>
 
-      {s.timeline.some((f) => f.kind in CUES) && (
+      {moments.length > 0 && (
         <section className="card">
-          <h2 className="section-title">Cues you got</h2>
+          <h2 className="section-title">Moments</h2>
+          <p className="small muted">Tap one to see it in what you said.</p>
           <ul className="timeline">
-            {s.timeline.filter((f) => f.kind in CUES).map((f, i) => (
-              <li key={i}><span className="muted">{clock(f.t - (s.startAt ?? 0))}</span> {CUES[f.kind as keyof typeof CUES].text}</li>
+            {moments.map((f, i) => (
+              <li key={i}>
+                <button className="moment" disabled={f.i == null} onClick={() => f.i != null && show(f.i)} aria-pressed={active === f.i}>
+                  <span className="muted">{clock(f.t - (s.startAt ?? 0))}</span>{' '}
+                  {f.kind === 'hesitation' ? `Hesitation (${f.detail}) before “${f.word}”` : CUES[f.kind as keyof typeof CUES].text}
+                </button>
+              </li>
             ))}
           </ul>
         </section>
@@ -162,13 +200,14 @@ export function ReportScreen({ result, go }: { result: SessionResult; go: (s: Sc
   );
 }
 
-function Stat({ label, value, unit, hint }: { label: string; value: string; unit: string; hint: string }) {
+function Stat({ label, value, unit, hint, prev }: { label: string; value: string; unit: string; hint: string; prev?: string }) {
   return (
     <div className="card stat">
       <span className="label">{label}</span>
       <span className="big-number">{value}</span>
       <span className="small">{unit}</span>
       <span className="small muted">{hint}</span>
+      {prev != null && <span className="small prev">Last time: {prev}</span>}
     </div>
   );
 }
