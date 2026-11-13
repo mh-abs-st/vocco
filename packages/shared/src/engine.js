@@ -223,10 +223,10 @@ const view = (kind) => ({ kind, text: CUES[kind].text, detail: CUES[kind].detail
 const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
 
 /**
- * @typedef {{ t: number, kind: string, word?: string, detail?: string }} Flag
+ * @typedef {{ t: number, kind: string, word?: string, detail?: string, i?: number }} Flag  `i`: index of the word it points at
  * @typedef {{
  *   spoke: boolean, words: number, durationSec: number, startAt?: number, talkingSec?: number, startDelaySec?: number,
- *   wpm?: number, targetWpm?: number[], paceSeries?: { t: number, wpm: number }[],
+ *   wpm?: number, targetWpm?: number[], paceSeries?: { t: number, wpm: number }[], paceBucketSec?: number,
  *   pauses?: { good: number, hesitations: number, longestSec: number, rushedSentenceEnds: number },
  *   fillers?: { count: number, perMinute: number, words: string[] },
  *   sentences?: { count: number, avgWords: number, runOns: number },
@@ -255,7 +255,13 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
   const fillers = fillerIndexes(words);
   let goodPauses = 0, hesitations = 0, longest = 0, talking = 0, rushedStops = 0;
   /** @type {{ t: number, kind: string, word?: string, detail?: string }[]} */
-  const flags = [...timeline];
+  // Cues point at the last word heard when they were shown.
+  const lastWordAt = (t) => {
+    let k = -1;
+    for (let j = 0; j < words.length && words[j].start <= t; j++) k = j;
+    return Math.max(0, k);
+  };
+  const flags = timeline.map((f) => ({ ...f, i: lastWordAt(f.t) }));
   for (let i = 0; i < words.length; i++) {
     talking += words[i].end - words[i].start;
     if (i + 1 >= words.length) break;
@@ -265,18 +271,19 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
     if (endsClause(words[i]) && gap >= R.breathGapS && gap <= R.goodPauseMaxS) goodPauses++;
     else if (!endsClause(words[i]) && (gap >= R.hesitationGapS || (gap >= R.breathGapS && fillers.has(i + 1)))) {
       hesitations++;
-      flags.push({ t: round(words[i].end), kind: 'hesitation', word: words[i + 1].text, detail: `${round(gap)} s` });
+      flags.push({ t: round(words[i].end), kind: 'hesitation', word: words[i + 1].text, detail: `${round(gap)} s`, i: i + 1 });
     }
     if (endsSentence(words[i]) && gap < R.rushGapS) rushedStops++;
   }
 
-  // Pace per 10 seconds.
+  // Pace per 10 seconds (per 5 s for talks under 90 s, so a short talk still shows a shape).
+  const bucket = durationSec < 90 ? 5 : 10;
   const paceSeries = [];
-  for (let t = first.start; t < last.end; t += 10) {
-    const n = words.filter((w) => w.start >= t && w.start < t + 10).length;
-    const outage = breaks.reduce((x, br) => x + Math.max(0, Math.min(br.to, t + 10) - Math.max(br.from, t)), 0);
-    const span = Math.min(10, last.end - t) - outage;
-    if (span >= 4) paceSeries.push({ t: round(t - first.start, 0), wpm: Math.round((n / span) * 60) });
+  for (let t = first.start; t < last.end; t += bucket) {
+    const n = words.filter((w) => w.start >= t && w.start < t + bucket).length;
+    const outage = breaks.reduce((x, br) => x + Math.max(0, Math.min(br.to, t + bucket) - Math.max(br.from, t)), 0);
+    const span = Math.min(bucket, last.end - t) - outage;
+    if (span >= bucket * 0.4) paceSeries.push({ t: round(t - first.start, 0), wpm: Math.round((n / span) * 60) });
   }
   const wpm = Math.round((words.length / durationSec) * 60);
 
@@ -286,10 +293,10 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
   const fillerWords = [];
   for (const i of fillers) fillerWords.push(words[i].word);
   const fillerCount = countFillers(words);
-  for (const i of fillers) flags.push({ t: round(words[i].start), kind: 'filler', word: words[i].text });
+  for (const i of fillers) flags.push({ t: round(words[i].start), kind: 'filler', word: words[i].text, i });
 
   const unclear = words.filter((w) => w.confidence < R.unclearConfidence && w.word.length > 2 && !fillers.has(words.indexOf(w)));
-  for (const w of unclear) flags.push({ t: round(w.start), kind: 'unclear', word: w.text });
+  for (const w of unclear) flags.push({ t: round(w.start), kind: 'unclear', word: w.text, i: words.indexOf(w) });
 
   // Voice.
   const voiced = frames.filter((f) => f.hz && f.t >= first.start && f.t <= last.end);
@@ -316,6 +323,7 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
     wpm,
     targetWpm,
     paceSeries,
+    paceBucketSec: bucket,
     pauses: { good: goodPauses, hesitations, longestSec: round(longest), rushedSentenceEnds: rushedStops },
     fillers: { count: fillerCount, perMinute: round((fillerCount / durationSec) * 60), words: [...new Set(fillerWords)] },
     sentences: { count: sents.length, avgWords: round(words.length / Math.max(1, sents.length)), runOns },
