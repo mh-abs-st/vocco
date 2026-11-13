@@ -29,6 +29,10 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
   const phaseRef = useRef<Phase>('connecting');
   const finishRef = useRef<() => void>(() => {});
   const reconnectRef = useRef<() => void>(() => {});
+  const tapRef = useRef<() => void>(() => {});
+  // Safari can keep audio paused until a tap. Shown over whatever the session is doing; nothing moves meanwhile.
+  const [needsTap, setNeedsTap] = useState(false);
+  const needsTapRef = useRef(false);
   const setP = (p: Phase) => {
     phaseRef.current = p;
     setPhase(p);
@@ -50,6 +54,13 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     let sockClosed: Promise<void> = Promise.resolve();
 
     const coach = createCoach({ goals: setup.goals, baseline: setup.baseline });
+
+    const afterReady = () => {
+      if (setup.prepSeconds > 0) {
+        prepStart = Date.now();
+        setP('prep');
+      } else goLive();
+    };
 
     const goLive = () => {
       goAt = mic.time;
@@ -81,12 +92,8 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     function onMessage(m: ServerMessage) {
       const phase = phaseRef.current;
       if (m.type === 'ready') {
-        if (phase === 'connecting') {
-          if (setup.prepSeconds > 0) {
-            prepStart = Date.now();
-            setP('prep');
-          } else goLive();
-        } else if (phase === 'reconnecting') {
+        if (phase === 'connecting') afterReady();
+        else if (phase === 'reconnecting') {
           const now = mic.time;
           coach.addBreak(lostAt, now);
           lostTotal += now - lostAt;
@@ -134,12 +141,26 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     });
 
     connect();
-    mic.start().catch((e) => {
-      if (cancelled) return;
-      setError(micError(e));
-      setP('error');
-      sock?.close();
-    });
+    mic
+      .start()
+      .then(() => {
+        // Safari may keep audio paused because the session didn't start from a tap: ask for one.
+        if (!cancelled && !mic.running) {
+          needsTapRef.current = true;
+          setNeedsTap(true);
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(micError(e));
+        setP('error');
+        sock?.close();
+      });
+    tapRef.current = async () => {
+      if (!(await mic.resume()) || cancelled) return;
+      needsTapRef.current = false;
+      setNeedsTap(false);
+    };
 
     async function finish() {
       if (ended) return;
@@ -169,6 +190,10 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
     const timer = setInterval(() => {
       if (cancelled) return;
       if (phaseRef.current === 'prep') {
+        if (needsTapRef.current) {
+          prepStart += 250; // the thinking time waits for the tap
+          return;
+        }
         const left = setup.prepSeconds - (Date.now() - prepStart) / 1000;
         setPrepLeft(Math.max(0, Math.ceil(left)));
         if (left <= 0) goLive();
@@ -193,10 +218,11 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
   }, []);
 
   const fillers = useMemo(() => fillerIndexes(finals), [finals]);
-  const transcriptEnd = useRef<HTMLDivElement>(null);
+  const transcriptBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Newer browsers return a Promise from scrollIntoView: don't hand it back to React as a cleanup.
-    void transcriptEnd.current?.scrollIntoView({ block: 'nearest' });
+    // Scroll only the transcript box (scrollIntoView would also scroll the page and push the cue away on phones).
+    const el = transcriptBox.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [finals, interim]);
 
   if (phase === 'error') {
@@ -235,7 +261,17 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
         </div>
       </div>
 
-      <div className={`cue ${cue ? 'on' : ''} ${phase === 'lost' ? 'lost' : ''}`} role="status" aria-live="polite">
+      <div className={`cue ${cue && !needsTap ? 'on' : ''} ${phase === 'lost' ? 'lost' : ''}`} role="status" aria-live="polite">
+        {needsTap && phase !== 'lost' && phase !== 'ending' ? (
+          <>
+            <span className="cue-text">Tap to start listening</span>
+            <span className="cue-detail">Your browser waits for a tap before it uses the microphone.</span>
+            <span className="row wrap cue-actions">
+              <button className="btn primary" onClick={() => tapRef.current()}>Start listening</button>
+            </span>
+          </>
+        ) : (
+          <>
         {phase === 'connecting' && <span className="cue-text">Getting ready…</span>}
         {phase === 'prep' && (
           <>
@@ -262,11 +298,13 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
         )}
         {phase === 'reconnecting' && <span className="cue-text quiet">Reconnecting…</span>}
         {phase === 'ending' && <span className="cue-text quiet">Writing your report…</span>}
+          </>
+        )}
       </div>
       {notice && <p className="note">{notice}</p>}
 
       <div className="grid session-grid">
-        <div className="card transcript" aria-label="What you said">
+        <div className="card transcript" aria-label="What you said" ref={transcriptBox}>
           {finals.length === 0 && !interim && <p className="muted">Your words appear here as you speak.</p>}
           <p>
             {finals.map((w, i) => (
@@ -274,7 +312,6 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
             ))}
             {interim && <span className="interim">{interim}</span>}
           </p>
-          <div ref={transcriptEnd} />
         </div>
         <div className="stack-sm">
           <div className="card meter-card">
@@ -285,7 +322,7 @@ export function Session({ setup, go }: { setup: SessionSetup; go: (s: Screen) =>
           <div className="card meter-card">
             <span className="label">Voice</span>
             <VoiceTrace frames={frames} now={audioTime} baselineHz={setup.baseline?.pitchHz} />
-            <span className="small muted">Line: your pitch going up and down. Bar: loudness.</span>
+            <span className="small muted voice-hint">Line: your pitch going up and down. Bar: loudness.</span>
           </div>
         </div>
       </div>

@@ -98,7 +98,24 @@ input:focus, select:focus, .btn:focus-visible, .chip:focus-visible, .card:focus-
 .cue-text.quiet { color: var(--muted); font-size: 1.4rem; }
 .cue-detail { font-size: 1.05rem; opacity: 0.92; }
 .session-grid { grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); }
-@media (max-width: 760px) { .session-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  /* Phone: meters side by side above the transcript, so the cue, pace and voice stay in view while you talk. */
+  .session-grid { grid-template-columns: 1fr; }
+  .session-grid > .stack-sm { order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .session-grid > .stack-sm > * + * { margin-top: 0; }
+  .session-topic { font-size: 1.05rem; }
+  .cue { min-height: 76px; padding: 14px 18px; }
+  .transcript { min-height: 150px; max-height: 38vh; font-size: 1.02rem; }
+  .meter-card { padding: 12px 14px; }
+  .meter-card .big-number { font-size: 1.7rem; }
+  .meter-card .small { font-size: 0.75rem; }
+  .voice-trace { height: 56px; }
+  .voice-hint { display: none; }
+  .timer { font-size: 1.25rem; }
+  .timeline { columns: 1; }
+  /* The chart is drawn 640 wide and scaled down: bigger labels in its own units stay readable. */
+  .pace-chart .axis { font-size: 26px; }
+}
 .transcript { min-height: 260px; max-height: 50vh; overflow-y: auto; font-size: 1.12rem; line-height: 1.7; }
 .interim { color: var(--muted); }
 .w.filler { background: #ffe1d6; border-radius: 4px; }
