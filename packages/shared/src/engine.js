@@ -57,6 +57,8 @@ export function createCoach(opts = {}) {
   /** @type {{ t: number, db: number, hz: number|null }[]} */
   const frames = [];
   let promptEnd = 0; // when you were asked to start
+  /** @type {{ from: number, to: number }[]} */
+  const breaks = []; // times the connection was lost: not your pauses
   let active = null; // { kind, since }
   let lastShown = -Infinity;
   const lastByKind = new Map();
@@ -83,7 +85,7 @@ export function createCoach(opts = {}) {
       const firstFew = words.filter((w) => w.start >= promptEnd).slice(0, 3);
       return firstFew.length > 0 && fillerIndexes(firstFew).has(0) && words.length < 8;
     },
-    resume: (t) => words.length > 0 && t - words[words.length - 1].end >= R.resumeAfterS,
+    resume: (t) => words.length > 0 && t - Math.max(words[words.length - 1].end, breaks.at(-1)?.to ?? -Infinity) >= R.resumeAfterS,
     slower: (t) => {
       const wpm = paceAt(t);
       return wpm != null && wpm > maxWpm + 15;
@@ -128,6 +130,7 @@ export function createCoach(opts = {}) {
     // Long pauses aren't "slow talking": take them out of the time.
     let paused = 0;
     for (let i = 0; i + 1 < recent.length; i++) paused += Math.max(0, recent[i + 1].start - recent[i].end - 1.0);
+    for (const b of breaks) paused += Math.max(0, Math.min(b.to, t) - Math.max(b.from, from)); // outages aren't talking time
     return (recent.length / Math.max(1, span - paused)) * 60;
   }
 
@@ -167,6 +170,10 @@ export function createCoach(opts = {}) {
     /** The prompt finished (or the countdown ended): "when to start" is timed from here. */
     promptEnded(t) {
       promptEnd = t;
+    },
+    /** The connection dropped at `from` and came back at `to`: that gap isn't yours. */
+    addBreak(from, to) {
+      if (to > from) breaks.push({ from, to });
     },
     /** Final words from speech-to-text. */
     addWords(/** @type {Word[]} */ list) {
@@ -208,7 +215,7 @@ export function createCoach(opts = {}) {
     pace: (t) => paceAt(t),
     words: () => words,
     /** Numbers for the report. */
-    summary: () => summarize({ words, frames, promptEnd, timeline, shownCount, R, speechDb: speechDb(), targetWpm: [minWpm, maxWpm] }),
+    summary: () => summarize({ words, frames, promptEnd, timeline, shownCount, R, speechDb: speechDb(), targetWpm: [minWpm, maxWpm], breaks }),
   };
 }
 
@@ -225,6 +232,7 @@ const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
  *   sentences?: { count: number, avgWords: number, runOns: number },
  *   unclearWords?: string[],
  *   voice?: { medianHz: number, rangeSemitones: number, medianDb: number, normalDb: number|null } | null,
+ *   connectionLostSec?: number,
  *   cuesShown: Record<string, number>, timeline: Flag[] }} Summary
  */
 
@@ -233,12 +241,14 @@ const round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
  * time since you were asked to start. Exported for tests.
  * @returns {Summary}
  */
-export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCount = {}, R = RULES, speechDb = null, targetWpm = [130, 160] }) {
+export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCount = {}, R = RULES, speechDb = null, targetWpm = [130, 160], breaks = [] }) {
   if (!words.length) {
     return { spoke: false, words: 0, durationSec: 0, startAt: round(promptEnd), cuesShown: shownCount, timeline };
   }
   const first = words[0], last = words.at(-1);
-  const durationSec = Math.max(1, last.end - first.start);
+  const lost = breaks.reduce((n, b) => n + Math.max(0, Math.min(b.to, last.end) - Math.max(b.from, first.start)), 0);
+  const durationSec = Math.max(1, last.end - first.start - lost);
+  const brokenBetween = (a, b) => breaks.some((x) => x.from < b.start && x.to > a.end);
 
   // Pauses: a gap at a clause/sentence end is a pause that helps; a long gap mid-phrase, or one before a filler,
   // is a hesitation.
@@ -249,6 +259,7 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
   for (let i = 0; i < words.length; i++) {
     talking += words[i].end - words[i].start;
     if (i + 1 >= words.length) break;
+    if (brokenBetween(words[i], words[i + 1])) continue; // the connection dropped here: not a pause or hesitation
     const gap = words[i + 1].start - words[i].end;
     longest = Math.max(longest, gap);
     if (endsClause(words[i]) && gap >= R.breathGapS && gap <= R.goodPauseMaxS) goodPauses++;
@@ -263,7 +274,8 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
   const paceSeries = [];
   for (let t = first.start; t < last.end; t += 10) {
     const n = words.filter((w) => w.start >= t && w.start < t + 10).length;
-    const span = Math.min(10, last.end - t);
+    const outage = breaks.reduce((x, br) => x + Math.max(0, Math.min(br.to, t + 10) - Math.max(br.from, t)), 0);
+    const span = Math.min(10, last.end - t) - outage;
     if (span >= 4) paceSeries.push({ t: round(t - first.start, 0), wpm: Math.round((n / span) * 60) });
   }
   const wpm = Math.round((words.length / durationSec) * 60);
@@ -309,6 +321,7 @@ export function summarize({ words, frames, promptEnd = 0, timeline = [], shownCo
     sentences: { count: sents.length, avgWords: round(words.length / Math.max(1, sents.length)), runOns },
     unclearWords: unclear.map((w) => w.text.replace(/[^\p{L}'-]/gu, '')).slice(0, 20),
     voice,
+    connectionLostSec: lost ? round(lost) : undefined,
     cuesShown: shownCount,
     timeline: flags.sort((a, b) => a.t - b.t).slice(0, 200),
   };

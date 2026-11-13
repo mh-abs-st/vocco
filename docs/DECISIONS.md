@@ -18,7 +18,8 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **Pace ignores long pauses** (gaps over 1 s are taken out of the time): a pause is coached as a pause, not as slow talking.
 - **Pitch is relative to your own voice**: monotone = spread under 2 semitones over 15 s; the mic check (6 s, one line read aloud) records normal loudness and pitch for "Louder" and the pitch line.
 - **"Not clear" words** use Deepgram's word confidence (< 0.55) for now. It's a weak signal (noise also lowers it); real pronunciation scoring is Azure in M3.
-- **Times**: everything uses seconds of audio since the session started (the browser streams every sample, so Deepgram's word times and the browser's pitch frames share one clock).
+- **Times**: everything uses the mic's clock (seconds of audio since the mic started). The browser sends audio only after the server says `ready`, notes the mic time of the first chunk it sends on that connection, and adds it to every word time from Deepgram (which counts from that chunk). So word times and pitch frames share one clock, also after a reconnect.
+- **A lost connection doesn't end the session** (#3, 2026-11-13): the transcript and numbers so far stay; the user picks **Keep going** (reconnect) or **Get my report**. The outage is recorded as a break: not a pause or hesitation, not talking time (pace, duration), not counted against the session length, and "Pick it back up" waits 6 s after reconnecting. What was said while offline isn't heard. The server reports Deepgram dropping mid-session as `error` with `reason: 'upstream'` instead of closing silently.
 
 ## Stack
 

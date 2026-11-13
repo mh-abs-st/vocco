@@ -126,3 +126,24 @@ test('summary numbers', () => {
 test('summary when nothing was said', () => {
   assert.deepEqual(summarize({ words: [], frames: [] }).spoke, false);
 });
+
+test('a lost connection is not a hesitation, not talking time, and "Pick it back up" waits after it', () => {
+  const before = speak('I think sleep is the most underrated', { start: 0, wpm: 150 });
+  const after = speak('habit we have, and here is why.', { start: 40, wpm: 150 });
+  const c = createCoach({ goals: ['pace'] });
+  c.addWords(before);
+  c.addBreak(before.at(-1).end + 0.2, 39.5);
+  c.addWords(after);
+  const s = c.summary();
+  assert.equal(s.pauses.hesitations, 0);
+  assert.ok(s.durationSec < 7, String(s.durationSec)); // ~6 s of talking, not 42
+  assert.ok(s.wpm > 120, String(s.wpm));
+  assert.ok(s.connectionLostSec > 30);
+  assert.ok(s.paceSeries.every((p) => p.wpm > 0)); // no zero-pace points for the outage
+
+  const r = createCoach();
+  r.addWords(before);
+  r.addBreak(3, 30);
+  assert.equal(r.tick(33), null); // only 3 s since the connection came back
+  assert.equal(r.tick(36.5)?.kind, 'resume');
+});

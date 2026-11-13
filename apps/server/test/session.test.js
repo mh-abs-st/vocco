@@ -117,3 +117,23 @@ test('Deepgram failing to connect is reported once', () => {
   ups[0].onclose();
   assert.deepEqual(client.types(), ['error', 'closed']);
 });
+
+test('Deepgram dropping mid-session is reported, so the browser can reconnect', () => {
+  const { client, ups, guard } = setup();
+  client.emit('message', JSON.stringify({ type: 'start' }), false);
+  ups[0].open();
+  client.emit('message', pcm(), true);
+  ups[0].onclose();
+  assert.deepEqual(client.types(), ['ready', 'error', 'closed']);
+  assert.equal(client.sent[1].reason, 'upstream');
+  assert.equal(guard.openSessions('1.2.3.4'), 0);
+});
+
+test('a normal stop is not reported as an error', () => {
+  const { client, ups } = setup();
+  client.emit('message', JSON.stringify({ type: 'start' }), false);
+  ups[0].open();
+  client.emit('message', JSON.stringify({ type: 'stop' }), false);
+  ups[0].onclose();
+  assert.deepEqual(client.types(), ['ready', 'closed']);
+});
