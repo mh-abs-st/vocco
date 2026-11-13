@@ -29,6 +29,16 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **16 kHz PCM from an AudioWorklet** (not MediaRecorder/WebM like Offro): the pitch analysis needs raw samples anyway, and Azure (M3) needs PCM.
 - **Reports: Sonnet 5.5 with a strict, forced tool** and thinking off (`between_tools`), with fallbacks if the API refuses strict or forced tools (same lesson as Offro: without strict tools, nested results sometimes came back garbled).
 
+## Browsers (#4, 2026-11-13)
+
+- **Supported:** recent Chrome, Edge, Safari (macOS + iOS 14.5+) and Firefox, desktop and phone. Needs https (or localhost), `getUserMedia`, `AudioWorklet` and WebSocket; otherwise Home and Setup say so and Start is off (`apps/web/src/lib/support.ts`).
+- **The audio context is created first, synchronously**, so when it starts from a click (mic check) Safari counts the click. A session starts after a screen change, so if the browser still keeps audio paused, a **Tap to start listening** panel appears over the session; nothing moves until then (no audio, no clock, the thinking time waits).
+- **The worklet is connected to the speakers through a muted gain**: Safari only runs a worklet whose output leads somewhere. Nothing is heard.
+- **The default sample rate is kept** (44.1 or 48 kHz); the worklet resamples to 16 kHz. Forcing `new AudioContext({ sampleRate: 16000 })` breaks in Firefox with a mic at another rate.
+- **iOS interruptions** (a call, another app) pause audio; the context tries to resume on its own.
+- **Phones:** on the live screen the pace and voice meters sit side by side above the transcript, so the cue and meters stay in view; the transcript scrolls inside its box, never the page.
+- Checked automatically in Chromium only (desktop and a phone viewport, plus simulated paused audio and an old browser). Real Safari/Firefox/iPhone/Android runs are a manual checklist in #4.
+
 ## Privacy
 
 - **Nothing is stored on the server.** Audio is relayed to Deepgram and not kept; the transcript and numbers are sent to Claude for the report and not kept. History and settings live in the browser's `localStorage`.

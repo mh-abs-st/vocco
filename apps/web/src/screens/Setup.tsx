@@ -7,6 +7,7 @@ import type { Screen } from '../App';
 import type { SessionSetup, Topic } from '../lib/types';
 import { loadPrefs, savePrefs } from '../lib/history';
 import { Mic, listMics, micError, type VoiceFrame } from '../audio/mic';
+import { supportProblem } from '../lib/support';
 
 const LENGTHS = [1, 2, 3, 5];
 const PREP = [0, 15, 30];
@@ -22,6 +23,7 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState(prefs.deviceId ?? '');
   const [baseline, setBaseline] = useState(prefs.baseline);
+  const unsupported = supportProblem();
 
   useEffect(() => {
     listMics().then(setMics).catch(() => {});
@@ -111,8 +113,9 @@ export function Setup({ topic, go }: { topic: Topic; go: (s: Screen) => void }) 
         </div>
       </div>
 
+      {unsupported && <p className="note warn">{unsupported}</p>}
       <div className="row end">
-        <button className="btn primary big" onClick={start}>Start speaking</button>
+        <button className="btn primary big" disabled={Boolean(unsupported)} onClick={start}>Start speaking</button>
       </div>
     </div>
   );
@@ -169,7 +172,7 @@ function MicCheck({ deviceId, done, onDone }: { deviceId: string; done: boolean;
         </p>
       )}
       {error && <p className="note warn">{error}</p>}
-      {state !== 'listening' && <button className="btn" onClick={run}>{state === 'ok' ? 'Check again' : 'Check my mic'}</button>}
+      {state !== 'listening' && <button className="btn" disabled={Boolean(supportProblem())} onClick={run}>{state === 'ok' ? 'Check again' : 'Check my mic'}</button>}
     </div>
   );
 }
