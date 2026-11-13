@@ -137,3 +137,57 @@ test('a normal stop is not reported as an error', () => {
   ups[0].onclose();
   assert.deepEqual(client.types(), ['ready', 'closed']);
 });
+
+// ----- sign-in (#9) -----
+const tick = () => new Promise((r) => setImmediate(r));
+test('with accounts on, a session needs a valid sign-in token', async () => {
+  const users = { good: { id: 'u1', email: 'a@example.com' } };
+  const config = loadConfig({ DEEPGRAM_API_KEY: 'dg' });
+  const guard = createGuard(config);
+  const mk = () => {
+    const client = new FakeClient();
+    const ups = [];
+    handleSession(client, { ip: '1.2.3.4', config, guard, log: () => {}, auth: async (t) => users[t] || null, open: (url) => { const u = new FakeUpstream(url); ups.push(u); return u; }, setTimer: () => ({}), clearTimer: () => {} });
+    return { client, ups };
+  };
+  const none = mk();
+  none.client.emit('message', JSON.stringify({ type: 'start' }), false);
+  await tick();
+  assert.deepEqual(none.client.types(), ['error', 'closed']);
+  assert.equal(none.client.sent[0].reason, 'auth');
+  assert.equal(none.ups.length, 0); // Deepgram never opened
+
+  const bad = mk();
+  bad.client.emit('message', JSON.stringify({ type: 'start', token: 'nope' }), false);
+  await tick();
+  assert.equal(bad.client.sent[0].reason, 'auth');
+
+  const ok = mk();
+  ok.client.emit('message', JSON.stringify({ type: 'start', token: 'good' }), false);
+  await tick();
+  assert.equal(ok.ups.length, 1);
+  assert.equal(guard.openSessions('user:u1'), 1);
+  assert.equal(guard.openSessions('1.2.3.4'), 1);
+  ok.client.emit('close');
+  assert.equal(guard.openSessions('user:u1'), 0);
+  assert.equal(guard.openSessions('1.2.3.4'), 0);
+});
+
+test('one user can’t open more sessions than allowed, even from other addresses', async () => {
+  const config = loadConfig({ DEEPGRAM_API_KEY: 'dg', MAX_SOCKETS_PER_IP: '1' });
+  const guard = createGuard(config);
+  const mk = (ip) => {
+    const client = new FakeClient();
+    handleSession(client, { ip, config, guard, log: () => {}, auth: async () => ({ id: 'u1', email: '' }), open: (url) => new FakeUpstream(url), setTimer: () => ({}), clearTimer: () => {} });
+    client.emit('message', JSON.stringify({ type: 'start', token: 't' }), false);
+    return client;
+  };
+  const a = mk('1.1.1.1');
+  await tick();
+  const b = mk('2.2.2.2');
+  await tick();
+  assert.equal(b.sent[0].type, 'limit');
+  assert.equal(guard.openSessions('2.2.2.2'), 0); // the address slot it took was given back
+  a.emit('close');
+  assert.equal(guard.openSessions('user:u1'), 0);
+});

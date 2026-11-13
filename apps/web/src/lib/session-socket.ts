@@ -28,11 +28,11 @@ export class SessionSocket {
   /** True once we closed it ourselves (no 'closed' message is reported after that). */
   closed = false;
 
-  constructor(onMessage: (m: ServerMessage) => void, opts: { language: string }) {
+  constructor(onMessage: (m: ServerMessage) => void, opts: { language: string; token?: string | null }) {
     this.ws = new WebSocket(sessionUrl());
     this.ws.binaryType = 'arraybuffer';
     this.ws.onopen = () => {
-      this.ws.send(JSON.stringify({ type: 'start', language: opts.language, sampleRate: 16000 }));
+      this.ws.send(JSON.stringify({ type: 'start', language: opts.language, sampleRate: 16000, ...(opts.token ? { token: opts.token } : {}) }));
     };
     this.ws.onmessage = (e) => {
       let m: ServerMessage;

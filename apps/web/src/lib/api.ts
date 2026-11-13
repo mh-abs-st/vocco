@@ -1,4 +1,5 @@
 import type { Report, SessionResult } from './types';
+import { accessToken, getAuth, sessionRejected } from './auth';
 
 const base = (import.meta.env.VITE_API_URL as string | undefined) || '';
 
@@ -15,10 +16,12 @@ export async function fetchHealth(): Promise<{ ok: boolean; listening: boolean; 
 export async function requestReport(s: SessionResult): Promise<Report> {
   const transcript = s.words.map((w) => w.text).join(' ');
   let res: Response;
+  const token = getAuth().accounts ? await accessToken() : null;
+  if (getAuth().accounts && !token) throw new Error('Sign in again to get your report.');
   try {
     res = await fetch(`${base}/api/report`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({
         mode: 'coach',
         topic: { title: s.setup.topic.title, prompt: s.setup.topic.prompt, side: s.setup.side },
@@ -31,6 +34,7 @@ export async function requestReport(s: SessionResult): Promise<Report> {
     throw new Error('Couldn’t reach Vocco. Check your connection and try again.');
   }
   const body = await res.json().catch(() => ({}));
+  if (res.status === 401) sessionRejected();
   if (!res.ok) throw new Error(body.error || 'The report couldn’t be written. Try again.');
   return body.report;
 }

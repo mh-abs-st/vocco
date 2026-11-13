@@ -20,7 +20,9 @@ server.on('upgrade', (req, socket, head) => {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     return socket.destroy();
   }
-  wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, { ip: clientIp(req, config.trustProxy), config, guard }));
+  // With accounts on, a session needs a valid sign-in token (sent with 'start').
+  const auth = db.enabled ? (token) => db.getUser(token) : undefined;
+  wss.handleUpgrade(req, socket, head, (ws) => handleSession(ws, { ip: clientIp(req, config.trustProxy), config, guard, auth }));
 });
 
 server.listen(config.port, () => {

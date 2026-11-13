@@ -69,6 +69,15 @@ rules, the stack or the data handling. Add to it when a decision changes.
 - **Server client over REST** (`apps/server/src/supabase.js`, no SDK, fake `fetch` in tests). Secret keys (`sb_secret_…`) go on `apikey` only; the legacy `service_role` JWT also as Bearer. Supabase is **optional**: without it the app runs as before (no sign-in); at start-up the server says whether it's connected and whether the tables exist.
 - New users start at 0 credits; free credits come from the server after the trial checks (#11).
 
+## Sign-in (#9, 2026-11-13)
+
+- **When Supabase is set up, a session and a report need sign-in**; Home, topics, setup and past reports don't. Without Supabase, nothing changes (no sign-in anywhere). The web app learns which from `GET /api/config` (accounts on/off, the project URL and the publishable key — never the secret key).
+- **Two ways in: an emailed link and Google.** No passwords.
+- **Supabase Auth over its REST API, no SDK** (`apps/web/src/lib/auth.ts`): the sign-in link and Google both return with the session in the URL fragment, which is read once and removed from the address bar; the session is kept in localStorage and refreshed a minute before it runs out. (Adding `@supabase/supabase-js` would also need a new lockfile, which the cloud workspace can't make.)
+- **Where you were going is kept for 30 minutes** (`lib/next.ts`), so pressing Start, signing in by email and opening the link goes straight into the session.
+- **The server checks every session and report**: the token comes with the socket's `start` message and as `Authorization: Bearer` on `/api/report`; Supabase confirms it (cached for a minute). A rejected token signs the browser out with "Sign in again". Limits count per user as well as per address (1 user can't get round them by switching networks).
+- **Delete account** (Account page, two steps) deletes the Supabase user; their account row and ledger go with it. Past sessions stay in the browser.
+
 ## Limits until accounts exist
 
 - Per address: 2 open sessions, 20 reports an hour; sessions stop at 10 minutes (`.env`). In memory, fine for one server.

@@ -14,11 +14,11 @@ credits, payments): copy and adapt, never import from it or share its accounts/d
   - `cues.js` (cue copy, goals), `pitch.js` (YIN pitch, loudness, PCM), `words.js` (Deepgram words, fillers, sentences), `topics.js` (topic library), `protocol.js` (the `/session` messages).
 - `apps/server/` — Node ≥ 22, `node:http` + `ws`, ESM.
   - `supabase.js` (accounts, credits, trial claims, cost rows over REST; optional: off without `SUPABASE_URL`),
-  - `index.js` (start-up, `/session` WebSocket), `app.js` (routes: `/health`, `/api/topics`, `/api/report`, the built web app), `session.js` (browser audio → Deepgram, words back), `deepgram.js`, `report.js` (Claude report: prompt, strict tool, clean-up), `anthropic.js` (fetch client, thinking defaults, `callTool`), `guard.js` (limits per address, origin check), `config.js` (env).
+  - `index.js` (start-up, `/session` WebSocket), `app.js` (routes: `/health`, `/api/config`, `/api/me`, `/api/account` (DELETE), `/api/topics`, `/api/report`, the built web app), `session.js` (browser audio → Deepgram, words back), `deepgram.js`, `report.js` (Claude report: prompt, strict tool, clean-up), `anthropic.js` (fetch client, thinking defaults, `callTool`), `guard.js` (limits per address, origin check), `config.js` (env).
 - `apps/web/` — React 19 + Vite + TypeScript.
-  - `src/screens/`: `Home`, `TopicPicker`, `Setup` (+ mic check), `Session` (live), `Report`.
+  - `src/screens/`: `Home`, `TopicPicker`, `Setup` (+ mic check), `Session` (live), `Report`, `SignIn` (email link, Google), `Account` (sign out, delete).
   - `src/audio/mic.ts` + `public/capture-worklet.js`: mic → 16 kHz → pitch/loudness frames + PCM.
-  - `src/lib/`: `session-socket.ts`, `api.ts`, `history.ts` (localStorage), `types.ts`, `format.ts`.
+  - `src/lib/`: `auth.ts` (Supabase Auth over REST; off when the server has no accounts), `next.ts` (where to go after signing in), `session-socket.ts`, `api.ts`, `history.ts` (localStorage), `types.ts`, `format.ts`.
 - `db/`: `schema.sql` (Supabase: run in the SQL Editor, safe to re-run), `test/` (applies it twice on plain Postgres and checks credits and access: `DATABASE_URL=… db/test/run.sh`).
 - `docs/`: `PLAN.md` (living plan, milestones), `SUPABASE.md` (project setup), `DECISIONS.md`, `product-plan.md` (the original product plan, kept as it was), `screenshots/`.
 - Work is tracked in GitHub issues, grouped by milestone; decisions for the owner have the `decision` label.

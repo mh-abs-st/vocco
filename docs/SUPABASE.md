@@ -46,11 +46,35 @@ The server log should say **`Supabase: connected, schema in place.`** Otherwise 
 
 `http://localhost:8787/health` also shows `"accounts": true`.
 
-## 5. Later
+## 5. Sign-in (#9)
 
-- **Sign-in (#9):** Authentication → URL Configuration (site URL and redirect URLs), and Authentication → Providers →
-  Google. The steps will be added here with #9.
-- **Production:** put the same three variables in the host's environment settings (#28).
+Once Supabase is set up, Vocco asks people to sign in before a session (Home and topics stay open). Two ways in:
+an emailed link, and Google.
+
+**Where people come back to.** Authentication → **URL Configuration**:
+- **Site URL:** your production address once you have one (e.g. `https://vocco.app`); `http://localhost:5173` until then.
+- **Redirect URLs:** add `http://localhost:5173/**` (local work) and later `https://<your domain>/**`. A sign-in link
+  only returns to an address on this list; anything else falls back to the Site URL.
+
+**Email links** work out of the box (Authentication → Providers → Email is on by default). Supabase's built-in
+email sender is only for testing: it sends very few emails an hour. Before real users, set your own sender in
+Authentication → **Emails → SMTP Settings** (for example Resend: host `smtp.resend.com`, port 465, user `resend`, the
+password is a Resend API key, and a sender on your own domain).
+
+**Google:**
+1. Google Cloud Console → APIs & Services → **Credentials → Create credentials → OAuth client ID** → Web application.
+2. **Authorized redirect URIs:** `https://<project-ref>.supabase.co/auth/v1/callback` (Supabase shows this exact URL
+   on the Google provider page).
+3. Copy the client ID and secret into Supabase → Authentication → Providers → **Google** → enable → Save.
+4. In the Google consent screen, set the app name (Vocco), support email and your domain.
+
+**Check it:** `npm run dev`, open http://localhost:5173, press **Sign in**, send yourself a link, open it on the same
+device: you come back signed in, and **Account** shows your email and 0 credits (free credits come with #11).
+
+## 6. Production
+
+Put the same three variables in the host's environment settings (#28), and add the production address to the
+Redirect URLs.
 - Nothing in CI needs these keys: CI tests the schema on its own throwaway Postgres (`db/test/run.sh`).
 
 ## Manual credit changes

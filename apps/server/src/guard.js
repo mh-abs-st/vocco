@@ -1,12 +1,12 @@
-// Abuse limits that need no accounts yet: open sessions per address and reports per address per hour.
-// In memory: fine for one server. Accounts and credits replace most of this later (see docs/PLAN.md, M0b).
+// Abuse limits: open sessions and reports per hour, counted per key. Keys are an address ("1.2.3.4") and, when
+// someone is signed in, also their user ("user:<id>"): both must be under the limit. In memory: fine for one server.
 
 export function createGuard({ maxSocketsPerIp = 2, reportsPerHourPerIp = 20, now = () => Date.now() } = {}) {
   const sockets = new Map(); // ip → open session count
   const reports = new Map(); // ip → timestamps in the last hour
 
   return {
-    /** Take a session slot; false when this address already has its maximum open. */
+    /** Take a session slot; false when this key (address or user) already has its maximum open. */
     openSession(ip) {
       const n = sockets.get(ip) || 0;
       if (n >= maxSocketsPerIp) return false;
@@ -19,16 +19,15 @@ export function createGuard({ maxSocketsPerIp = 2, reportsPerHourPerIp = 20, now
       else sockets.delete(ip);
     },
     openSessions: (ip) => sockets.get(ip) || 0,
-    /** Count a report request; false when over the hourly limit. */
-    allowReport(ip) {
+    /** Count a report request for every key; false (and nothing counted) when any is over the hourly limit. */
+    allowReport(...keys) {
       const t = now();
-      const recent = (reports.get(ip) || []).filter((x) => t - x < 3600_000);
-      if (recent.length >= reportsPerHourPerIp) {
-        reports.set(ip, recent);
+      const recent = keys.map((k) => (reports.get(k) || []).filter((x) => t - x < 3600_000));
+      if (recent.some((r) => r.length >= reportsPerHourPerIp)) {
+        keys.forEach((k, i) => reports.set(k, recent[i]));
         return false;
       }
-      recent.push(t);
-      reports.set(ip, recent);
+      keys.forEach((k, i) => reports.set(k, [...recent[i], t]));
       return true;
     },
   };
